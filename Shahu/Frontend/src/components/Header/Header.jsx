@@ -1,0 +1,47 @@
+import { useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
+import { FiBell, FiChevronDown, FiLogOut, FiMenu, FiMoon, FiSun } from 'react-icons/fi';
+import { toggleSidebar } from '../../redux/slices/uiSlice';
+import { logout } from '../../redux/slices/authSlice';
+import { useTheme } from '../../hooks/useTheme';
+import { authService } from '../../services/auth.service';
+import { STORAGE_KEYS } from '../../constants';
+
+const expiresAt = token => {
+  try { return JSON.parse(atob(token.split('.')[1])).exp * 1000; } catch { return 0; }
+};
+
+export function Header() {
+  const dispatch = useDispatch();
+  const user = useSelector(state => state.auth.user);
+  const refreshToken = useSelector(state => state.auth.refreshToken);
+  const accessToken = useSelector(state => state.auth.accessToken);
+  const { mode, toggleTheme } = useTheme();
+  const navigate = useNavigate();
+  const endSession = () => { localStorage.removeItem(STORAGE_KEYS.auth); dispatch(logout()); navigate('/', { replace: true }); };
+  const handleLogout = async () => { try { await authService.logout(refreshToken); } catch {} finally { endSession(); } };
+
+  useEffect(() => {
+    const remaining = expiresAt(accessToken) - Date.now();
+    if (remaining <= 0) { endSession(); return undefined; }
+    const timeout = window.setTimeout(endSession, remaining);
+    return () => window.clearTimeout(timeout);
+  }, [accessToken]);
+
+  return (
+    <header className="header">
+      <button type="button" className="icon-button" onClick={() => dispatch(toggleSidebar())}>
+        <FiMenu />
+      </button>
+      <div className="header-actions">
+        <button type="button" className="icon-button notification-button" aria-label="Notifications"><FiBell /><i /></button>
+        <button type="button" className="icon-button" onClick={toggleTheme}>
+          {mode === 'dark' ? <FiSun /> : <FiMoon />}
+        </button>
+        <div className="user-menu"><span className="user-avatar">{(user?.name || 'Admin').charAt(0).toUpperCase()}</span><span className="user-details"><strong>{user?.name || 'Admin'}</strong><small>{user?.role || 'Administrator'}</small></span><FiChevronDown /></div>
+        <button type="button" className="logout-button" onClick={handleLogout}><FiLogOut /><span>Logout</span></button>
+      </div>
+    </header>
+  );
+}

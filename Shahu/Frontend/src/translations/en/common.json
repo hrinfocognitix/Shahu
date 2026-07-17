@@ -1,0 +1,11 @@
+{
+  "app": "Shahu",
+  "login": "Login",
+  "dashboard": "Dashboard",
+  "users": "Users",
+  "reports": "Reports",
+  "settings": "Settings",
+  "notifications": "Notifications",
+  "profile": "Profile",
+  "empty": "No records found"
+}

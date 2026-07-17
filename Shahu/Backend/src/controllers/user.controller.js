@@ -1,0 +1,57 @@
+const userService = require('../services/user.service');
+const asyncHandler = require('../utils/asyncHandler');
+const apiResponse = require('../utils/apiResponse');
+const AppError = require('../utils/appError');
+const { STATUS_CODES } = require('../constants/statusCodes');
+
+const listUsers = asyncHandler(async (req, res) => {
+  const { items, meta } = await userService.listUsers(req.query, req.user);
+  return apiResponse.success(res, { message: 'Users fetched', data: items, meta });
+});
+
+const getProfile = asyncHandler(async (req, res) =>
+  apiResponse.success(res, { message: 'Profile fetched', data: req.user })
+);
+
+const getUser = asyncHandler(async (req, res) => {
+  const user = await userService.getUserById(req.params.id);
+  if (!user) {
+    throw new AppError('User not found', STATUS_CODES.NOT_FOUND);
+  }
+  return apiResponse.success(res, { message: 'User fetched', data: user });
+});
+
+const updateUser = asyncHandler(async (req, res) => {
+  const user = await userService.updateUser(req.params.id, req.body);
+  if (!user) {
+    throw new AppError('User not found', STATUS_CODES.NOT_FOUND);
+  }
+  return apiResponse.success(res, { message: 'User updated', data: user });
+});
+
+const updateOwnPassword = asyncHandler(async (req, res) => {
+  await userService.updateOwnPassword(req.user._id, req.body);
+  return apiResponse.success(res, { message: 'Password updated' });
+});
+
+const createUser = asyncHandler(async (req, res) => {
+  const user = await userService.createUser(req.body);
+  return apiResponse.success(res, { statusCode: STATUS_CODES.CREATED, message: 'User created', data: user });
+});
+
+const softDeleteUser = asyncHandler(async (req, res) => {
+  const user = await userService.softDeleteUser(req.params.id, req.user._id);
+  return apiResponse.success(res, { message: 'User deleted', data: user });
+});
+
+const restoreUser = asyncHandler(async (req, res) => {
+  const user = await userService.restoreUser(req.params.id, req.user._id);
+  return apiResponse.success(res, { message: 'User restored', data: user });
+});
+
+const permanentDeleteUser = asyncHandler(async (req, res) => {
+  await userService.permanentDeleteUser(req.params.id);
+  return apiResponse.success(res, { message: 'User permanently deleted' });
+});
+
+module.exports = { listUsers, getProfile, getUser, updateUser, updateOwnPassword, createUser, softDeleteUser, restoreUser, permanentDeleteUser };
