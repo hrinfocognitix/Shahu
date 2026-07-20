@@ -6,6 +6,6 @@ const { authenticate } = require('../middleware/auth.middleware');
 const router = express.Router();
 
 router.get('/health', commonController.health);
-router.post('/upload', authenticate, upload.single('file'), commonController.uploadFile);
+router.post('/upload', authenticate, upload.media.single('file'), commonController.uploadFile);
 
 module.exports = router;

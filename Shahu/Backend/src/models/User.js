@@ -6,32 +6,33 @@ const userSchema = new mongoose.Schema(
     name: {
       type: String,
       trim: true,
-      required: true
+      required: true,
     },
     email: {
       type: String,
       lowercase: true,
       trim: true,
       unique: true,
-      required: true
+      required: true,
     },
     password: {
       type: String,
       required: true,
-      select: false
+      select: false,
     },
     initialPassword: {
       type: String,
-      select: false
+      select: false,
     },
     mustChangePassword: {
       type: Boolean,
-      default: false
+      default: false,
     },
+    authVersion: { type: Number, default: 0, min: 0, select: false },
     role: {
       type: String,
       enum: Object.values(ROLES),
-      default: ROLES.USER
+      default: ROLES.USER,
     },
     profile: {
       phone: String,
@@ -65,6 +66,16 @@ const userSchema = new mongoose.Schema(
       emergencyContact: { name: String, phone: String, relation: String },
       assignedCourses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
       assignedSubjects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Subject' }],
+      subjectDescriptions: [
+        { subject: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject' }, description: String },
+      ],
+      subjectAssignmentHistory: [
+        {
+          subjects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Subject' }],
+          changedAt: { type: Date, default: Date.now },
+          changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        },
+      ],
       enrolledCourse: { type: mongoose.Schema.Types.ObjectId, ref: 'Course' },
       enrolledSubjects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Subject' }],
       educationQualification: String,
@@ -77,7 +88,7 @@ const userSchema = new mongoose.Schema(
         total: Number,
         discount: Number,
         paid: Number,
-        remaining: Number
+        remaining: Number,
       },
       signature: String,
       studentStatus: String,
@@ -93,7 +104,7 @@ const userSchema = new mongoose.Schema(
         accountHolder: String,
         accountNumber: String,
         ifsc: String,
-        upiId: String
+        upiId: String,
       },
       orientation: {
         academyRules: String,
@@ -103,26 +114,26 @@ const userSchema = new mongoose.Schema(
         onlineTeachingGuidelines: String,
         leavePolicy: String,
         codeOfConduct: String,
-        digitalResources: [String]
-      }
+        digitalResources: [String],
+      },
     },
     refreshTokens: {
       type: [String],
       default: [],
-      select: false
+      select: false,
     },
     isActive: {
       type: Boolean,
-      default: true
+      default: true,
     },
-    lastLoginAt: Date
-    ,createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
-    ,updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
-    ,isDeleted: { type: Boolean, default: false, index: true }
-    ,deletedAt: Date
-    ,deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
-    ,restoredAt: Date
-    ,restoredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    lastLoginAt: Date,
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: Date,
+    deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    restoredAt: Date,
+    restoredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
 );
@@ -130,10 +141,12 @@ const userSchema = new mongoose.Schema(
 userSchema.set('toJSON', {
   transform(doc, ret) {
     delete ret.password;
+    delete ret.initialPassword;
     delete ret.refreshTokens;
+    delete ret.authVersion;
     delete ret.__v;
     return ret;
-  }
+  },
 });
 
 module.exports = mongoose.model('User', userSchema);

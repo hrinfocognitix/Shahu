@@ -9,7 +9,11 @@ const splashScreenSchema = new mongoose.Schema(
     startsAt: { type: Date, required: true },
     endsAt: { type: Date, required: true },
     isEnabled: { type: Boolean, default: true },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: Date,
+    deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   },
   { timestamps: true }
 );

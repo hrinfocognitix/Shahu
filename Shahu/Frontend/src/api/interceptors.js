@@ -11,7 +11,7 @@ const endSession = () => {
 };
 
 export function setupInterceptors() {
-  apiClient.interceptors.request.use(config => {
+  apiClient.interceptors.request.use((config) => {
     const token = store.getState().auth.accessToken;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -27,13 +27,20 @@ export function setupInterceptors() {
   });
 
   apiClient.interceptors.response.use(
-    response => response,
-    async error => {
+    (response) => response,
+    async (error) => {
       const originalRequest = error.config;
       const status = error.response?.status;
-      if (status === 401 && !originalRequest?._sessionEnded) {
+      const expiredPlan =
+        status === 403 &&
+        /course plan has expired|not active/i.test(error.response?.data?.message || '');
+      if ((status === 401 || expiredPlan) && !originalRequest?._sessionEnded) {
         originalRequest._sessionEnded = true;
         endSession();
+        if (expiredPlan)
+          toast.error('Your course validity has ended. Please renew your plan.', {
+            autoClose: 7000,
+          });
         window.location.assign('/login');
       }
 

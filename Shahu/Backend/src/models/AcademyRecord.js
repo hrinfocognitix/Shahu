@@ -32,4 +32,5 @@ const academyRecordSchema = new mongoose.Schema(
 
 academyRecordSchema.plugin(auditPlugin);
 academyRecordSchema.index({ module: 1, createdAt: -1 });
+academyRecordSchema.index({ 'payload.dedupeKey': 1 }, { unique: true, sparse: true });
 module.exports = mongoose.model('AcademyRecord', academyRecordSchema);

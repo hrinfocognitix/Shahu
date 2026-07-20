@@ -7,7 +7,8 @@ const STATUS_CODES = Object.freeze({
   NOT_FOUND: 404,
   CONFLICT: 409,
   TOO_MANY_REQUESTS: 429,
-  SERVER_ERROR: 500
+  SERVER_ERROR: 500,
+  SERVICE_UNAVAILABLE: 503,
 });
 
 module.exports = { STATUS_CODES };

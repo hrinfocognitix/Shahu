@@ -6,11 +6,11 @@ function createTransporter() {
     host: env.smtp.host,
     port: env.smtp.port,
     secure: env.smtp.port === 465,
-    auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.pass } : undefined
+    auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.pass } : undefined,
   });
 }
 
-async function sendEmail({ to, subject, html, text }) {
+async function sendEmail({ to, subject, html, text, attachments }) {
   if (!env.smtp.host) {
     return { skipped: true, reason: 'SMTP is not configured' };
   }
@@ -19,7 +19,8 @@ async function sendEmail({ to, subject, html, text }) {
     to,
     subject,
     html,
-    text
+    text,
+    attachments,
   });
 }
 

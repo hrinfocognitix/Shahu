@@ -8,7 +8,7 @@ const initialState = persisted || {
   accessToken: null,
   refreshToken: null,
   loading: false,
-  error: null
+  error: null,
 };
 
 const authSlice = createSlice({
@@ -33,12 +33,21 @@ const authSlice = createSlice({
       state.accessToken = action.payload.accessToken;
       state.refreshToken = action.payload.refreshToken;
     },
+    passwordChanged(state) {
+      if (state.user) state.user.mustChangePassword = false;
+    },
     logout() {
       return { user: null, accessToken: null, refreshToken: null, loading: false, error: null };
-    }
-  }
+    },
+  },
 });
 
-export const { loginRequest, loginSuccess, loginFailure, refreshTokenSuccess, logout } =
-  authSlice.actions;
+export const {
+  loginRequest,
+  loginSuccess,
+  loginFailure,
+  refreshTokenSuccess,
+  passwordChanged,
+  logout,
+} = authSlice.actions;
 export default authSlice.reducer;

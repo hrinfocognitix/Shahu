@@ -17,6 +17,11 @@ const contentSchema = new mongoose.Schema(
     thumbnail: String,
     imageUrl: String,
     videoUrl: String,
+    media: [{
+      _id: false,
+      url: { type: String, required: true },
+      type: { type: String, enum: ['image', 'video'], required: true }
+    }],
     externalUrl: String,
     displayOrder: { type: Number, default: 0 },
     isEnabled: { type: Boolean, default: true },

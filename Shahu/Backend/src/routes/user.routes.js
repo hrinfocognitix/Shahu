@@ -3,7 +3,7 @@ const userController = require('../controllers/user.controller');
 const validate = require('../middleware/validation.middleware');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
-const { updateUserSchema, updatePasswordSchema, createUserSchema } = require('../validators/user.validator');
+const { updateUserSchema, updatePasswordSchema } = require('../validators/user.validator');
 const { ROLES } = require('../constants/roles');
 
 const router = express.Router();
@@ -11,9 +11,8 @@ const router = express.Router();
 router.use(authenticate);
 router.get('/me', userController.getProfile);
 router.patch('/me/password', validate(updatePasswordSchema), userController.updateOwnPassword);
-router.post('/', authorize(ROLES.ADMIN), validate(createUserSchema), userController.createUser);
 router.get('/', authorize(ROLES.ADMIN, ROLES.STAFF, ROLES.SUPERADMIN), userController.listUsers);
 router.get('/:id', authorize(ROLES.ADMIN, ROLES.STAFF, ROLES.SUPERADMIN), userController.getUser);
-router.patch('/:id', authorize(ROLES.ADMIN), validate(updateUserSchema), userController.updateUser);
+router.patch('/:id', authorize(ROLES.ADMIN, ROLES.SUPERADMIN), validate(updateUserSchema), userController.updateUser);
 
 module.exports = router;

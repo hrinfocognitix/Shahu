@@ -9,12 +9,22 @@ const register = asyncHandler(async (req, res) => {
   return apiResponse.success(res, {
     statusCode: STATUS_CODES.CREATED,
     message: MESSAGES.REGISTER_SUCCESS,
-    data
+    data,
   });
 });
 
 const login = asyncHandler(async (req, res) => {
   const data = await authService.login(req.body);
+  return apiResponse.success(res, { message: MESSAGES.LOGIN_SUCCESS, data });
+});
+
+const requestStudentOtp = asyncHandler(async (req, res) => {
+  const data = await authService.requestStudentOtp(req.body);
+  return apiResponse.success(res, { message: 'OTP sent to the registered email', data });
+});
+
+const verifyStudentOtp = asyncHandler(async (req, res) => {
+  const data = await authService.verifyStudentOtp(req.body);
   return apiResponse.success(res, { message: MESSAGES.LOGIN_SUCCESS, data });
 });
 
@@ -28,4 +38,4 @@ const logout = asyncHandler(async (req, res) => {
   return apiResponse.success(res, { message: 'Logged out successfully' });
 });
 
-module.exports = { register, login, refresh, logout };
+module.exports = { register, login, requestStudentOtp, verifyStudentOtp, refresh, logout };

@@ -3,6 +3,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const apiResponse = require('../utils/apiResponse');
 const AppError = require('../utils/appError');
 const { STATUS_CODES } = require('../constants/statusCodes');
+const AuditLog = require('../models/AuditLog');
 
 const listUsers = asyncHandler(async (req, res) => {
   const { items, meta } = await userService.listUsers(req.query, req.user);
@@ -22,10 +23,24 @@ const getUser = asyncHandler(async (req, res) => {
 });
 
 const updateUser = asyncHandler(async (req, res) => {
-  const user = await userService.updateUser(req.params.id, req.body);
+  const previous = await userService.getUserById(req.params.id);
+  if (!previous) {
+    throw new AppError('User not found', STATUS_CODES.NOT_FOUND);
+  }
+  const user = await userService.updateUser(req.params.id, { ...req.body, updatedBy: req.user._id });
   if (!user) {
     throw new AppError('User not found', STATUS_CODES.NOT_FOUND);
   }
+  await AuditLog.create({
+    user: req.user._id,
+    role: req.user.role,
+    action: previous.role === 'student' ? 'student_profile_updated' : 'teacher_profile_updated',
+    module: previous.role === 'student' ? 'students' : 'teachers',
+    recordId: previous._id,
+    previousValue: { name: previous.name, profile: previous.profile, isActive: previous.isActive },
+    newValue: { name: user.name, profile: user.profile, isActive: user.isActive },
+    ipAddress: req.ip,
+  });
   return apiResponse.success(res, { message: 'User updated', data: user });
 });
 
@@ -35,8 +50,14 @@ const updateOwnPassword = asyncHandler(async (req, res) => {
 });
 
 const createUser = asyncHandler(async (req, res) => {
-  const user = await userService.createUser(req.body);
-  return apiResponse.success(res, { statusCode: STATUS_CODES.CREATED, message: 'User created', data: user });
+  const result = await userService.createUser(req.body);
+  return apiResponse.success(res, {
+    statusCode: STATUS_CODES.CREATED,
+    message: 'User created',
+    data: req.body.role === 'teacher'
+      ? { teacher: result.user, temporaryPassword: result.temporaryPassword }
+      : result.user,
+  });
 });
 
 const softDeleteUser = asyncHandler(async (req, res) => {

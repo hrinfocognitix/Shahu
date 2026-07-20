@@ -3,7 +3,7 @@ const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { ROLES } = require('../constants/roles');
 
-function createResourceRouter(controller, { publicRead = false, writeRoles = [ROLES.ADMIN] } = {}) {
+function createResourceRouter(controller, { publicRead = false, writeRoles = [ROLES.ADMIN, ROLES.SUPERADMIN] } = {}) {
   const router = express.Router();
   if (publicRead) router.get('/', controller.list);
   router.use(authenticate);

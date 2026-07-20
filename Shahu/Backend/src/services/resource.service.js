@@ -2,7 +2,7 @@ const { getPagination, buildPaginationMeta } = require('../helpers/pagination.he
 const AppError = require('../utils/appError');
 const { STATUS_CODES } = require('../constants/statusCodes');
 
-async function list(Model, query, populate = '') {
+async function list(Model, query, populate = '', accessFilter = {}) {
   const pagination = getPagination(query);
   const filter = {};
   if (query.deleted === 'true') filter.isDeleted = true;
@@ -12,11 +12,20 @@ async function list(Model, query, populate = '') {
   if (query.subject) filter.subject = query.subject;
   if (query.type) filter.type = query.type;
   if (query.module) filter.module = query.module;
-  if (query.isEnabled !== undefined) filter.isEnabled = query.isEnabled === true || query.isEnabled === 'true';
-  if (query.search) filter.$or = ['name', 'title', 'description'].map(field => ({ [field]: new RegExp(query.search, 'i') }));
+  Object.assign(filter, accessFilter);
+  if (query.isEnabled !== undefined)
+    filter.isEnabled = query.isEnabled === true || query.isEnabled === 'true';
+  if (query.search)
+    filter.$or = ['name', 'title', 'description'].map((field) => ({
+      [field]: new RegExp(query.search, 'i'),
+    }));
   const [items, total] = await Promise.all([
-    Model.find(filter).populate(populate).sort(query.sort === 'displayOrder' ? { displayOrder: 1, createdAt: -1 } : { createdAt: -1 }).skip(pagination.skip).limit(pagination.limit),
-    Model.countDocuments(filter)
+    Model.find(filter)
+      .populate(populate)
+      .sort(query.sort === 'displayOrder' ? { displayOrder: 1, createdAt: -1 } : { createdAt: -1 })
+      .skip(pagination.skip)
+      .limit(pagination.limit),
+    Model.countDocuments(filter),
   ]);
   return { items, meta: buildPaginationMeta({ ...pagination, total }) };
 }
@@ -28,7 +37,11 @@ async function getById(Model, id, populate = '') {
 }
 
 function create(Model, payload, userId) {
-  return Model.create({ ...payload, createdBy: payload.createdBy || userId, updatedBy: payload.updatedBy || userId });
+  return Model.create({
+    ...payload,
+    createdBy: payload.createdBy || userId,
+    updatedBy: payload.updatedBy || userId,
+  });
 }
 async function update(Model, id, payload) {
   const item = await Model.findByIdAndUpdate(id, payload, { new: true, runValidators: true });
@@ -39,13 +52,17 @@ async function remove(Model, id, userId, payload = {}) {
   const item = await Model.findByIdAndUpdate(
     id,
     { ...payload, isDeleted: true, deletedAt: new Date(), deletedBy: userId },
-    { new: true, runValidators: true },
+    { new: true, runValidators: true }
   );
   if (!item) throw new AppError('Resource not found', STATUS_CODES.NOT_FOUND);
   return item;
 }
 async function restore(Model, id, userId) {
-  const item = await Model.findByIdAndUpdate(id, { isDeleted: false, restoredAt: new Date(), restoredBy: userId }, { new: true });
+  const item = await Model.findByIdAndUpdate(
+    id,
+    { isDeleted: false, restoredAt: new Date(), restoredBy: userId },
+    { new: true }
+  );
   if (!item) throw new AppError('Resource not found', STATUS_CODES.NOT_FOUND);
   return item;
 }

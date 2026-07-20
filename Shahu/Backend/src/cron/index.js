@@ -1,10 +1,9 @@
 const cron = require('node-cron');
-const logger = require('../config/logger');
+const { runAndLog } = require('../services/enrollmentReminder.service');
 
 function startCronJobs() {
-  cron.schedule('0 * * * *', () => {
-    logger.info('Hourly maintenance cron executed');
-  });
+  cron.schedule('0 7 * * *', runAndLog, { timezone: 'Asia/Kolkata' });
+  runAndLog();
 }
 
 module.exports = startCronJobs;

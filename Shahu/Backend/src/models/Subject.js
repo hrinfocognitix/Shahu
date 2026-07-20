@@ -25,6 +25,12 @@ subjectSchema.pre('validate', async function setSubjectId() {
     this.name = this.name.trim();
   }
 
+  if (this.subjectCode) {
+    this.subjectCode = this.subjectCode.trim().toUpperCase();
+    const duplicateCode = await mongoose.model('Subject').findOne({ _id: { $ne: this._id }, subjectCode: new RegExp(`^${this.subjectCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') });
+    if (duplicateCode) throw new Error('Subject code already exists');
+  }
+
   if (this.name) {
     const normalizedName = this.name.toLowerCase();
     const duplicate = await mongoose.model('Subject').findOne({

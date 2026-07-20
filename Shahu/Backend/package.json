@@ -11,6 +11,10 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed:admin": "node src/scripts/seedAdmin.js",
+    "migrate:learning-files:check": "node src/scripts/migrateLearningFiles.js",
+    "migrate:learning-files:apply": "node src/scripts/migrateLearningFiles.js --apply",
+    "migrate:academy:check": "node src/scripts/migrateAcademyData.js",
+    "migrate:academy:apply": "node src/scripts/migrateAcademyData.js --apply",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "jest --runInBand"
@@ -20,6 +24,7 @@
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
     "firebase-admin": "^13.6.0",
