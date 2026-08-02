@@ -12,6 +12,7 @@ function resourceController(
     beforeUpdate,
     beforeRemove,
     beforePermanentRemove,
+    afterCreate,
     defaultFilter = {},
   } = {}
 ) {
@@ -37,10 +38,16 @@ function resourceController(
     }),
     create: asyncHandler(async (req, res) => {
       const payload = beforeCreate ? await beforeCreate(req) : req.body;
+      const item = await resourceService.create(Model, payload, req.user?._id);
+      // Side effects (for example FCM) must never make a successfully-created
+      // resource fail for the administrator.
+      if (afterCreate) {
+        Promise.resolve(afterCreate(item, req)).catch(() => {});
+      }
       return apiResponse.success(res, {
         statusCode: 201,
         message: 'Resource created',
-        data: await resourceService.create(Model, payload, req.user?._id),
+        data: item,
       });
     }),
     update: asyncHandler(async (req, res) => {

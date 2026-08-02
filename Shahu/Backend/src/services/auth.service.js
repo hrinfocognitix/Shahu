@@ -43,21 +43,21 @@ async function register(payload) {
   return { user, tokens };
 }
 
-async function login({ email, password }) {
-  const user = await authRepository.findUserByEmailWithSecrets(email);
+async function login({ email, identifier, password }) {
+  const user = identifier
+    ? await authRepository.findByLoginIdentifier(identifier)
+    : await authRepository.findUserByEmailWithSecrets(String(email).trim().toLowerCase());
   if (!user || !(await comparePassword(password, user.password))) {
     throw new AppError('Invalid email or password', STATUS_CODES.UNAUTHORIZED);
   }
   if (!user.isActive) {
     throw new AppError('Account is disabled', STATUS_CODES.FORBIDDEN);
   }
-  if (user.role === ROLES.STUDENT) {
-    throw new AppError(
-      'Student login requires the OTP sent to the registered email',
-      STATUS_CODES.FORBIDDEN
-    );
-  }
+  if (user.role === ROLES.STUDENT) await requireActiveStudentEnrollment(user._id);
 
+  // Students may change a temporary password later from their profile. Clearing this
+  // legacy flag after a successful password login prevents it from blocking the app.
+  if (user.mustChangePassword) user.mustChangePassword = false;
   user.authVersion = Number(user.authVersion || 0) + 1;
   const tokens = issueTokens(user);
   user.refreshTokens = [tokens.refreshToken];
@@ -147,6 +147,38 @@ async function verifyStudentOtp({ email, otp }) {
   return { user, tokens };
 }
 
+async function requestStudentPasswordReset({ email }) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const user = await authRepository.findUserByEmailWithSecrets(normalizedEmail);
+  if (!user || user.role !== ROLES.STUDENT || !user.isActive) {
+    return { eligible: false, message: 'You are not a registered student. Please purchase a course first.' };
+  }
+  const hasPurchasedCourse = await Enrollment.exists({ student: user._id });
+  if (!hasPurchasedCourse) {
+    return { eligible: false, message: 'You are not a registered student. Please purchase a course first.' };
+  }
+
+  const temporaryPassword = crypto.randomBytes(9).toString('base64url');
+  user.password = await hashPassword(temporaryPassword);
+  user.mustChangePassword = false;
+  user.authVersion = Number(user.authVersion || 0) + 1;
+  user.refreshTokens = [];
+  await user.save();
+
+  try {
+    const delivery = await sendEmail({
+      to: user.email,
+      subject: 'Your Lokaraja Career Academy temporary password',
+      text: `Your new temporary password is ${temporaryPassword}. Sign in, then change it immediately.`,
+      html: `<p>Your new temporary password is:</p><p style="font-size:20px;font-weight:700">${temporaryPassword}</p><p>Sign in, then change it immediately.</p>`,
+    });
+    if (delivery?.skipped) throw new Error(delivery.reason || 'Email delivery is not configured');
+  } catch {
+    throw new AppError('Password was reset, but the email could not be sent. Please contact the academy.', STATUS_CODES.SERVICE_UNAVAILABLE);
+  }
+  return { eligible: true, message: 'A new temporary password has been sent to your registered email address.' };
+}
+
 async function refresh(refreshToken) {
   const decoded = verifyRefreshToken(refreshToken);
   const user = await authRepository.findUserByIdWithSecrets(decoded.sub);
@@ -178,6 +210,7 @@ module.exports = {
   login,
   requestStudentOtp,
   verifyStudentOtp,
+  requestStudentPasswordReset,
   refresh,
   logout,
   _internals: { otpHash },

@@ -1,6 +1,7 @@
 const Enrollment = require('../models/Enrollment');
 const AcademyRecord = require('../models/AcademyRecord');
 const logger = require('../config/logger');
+const { sendNotificationPush } = require('./notification.service');
 
 function utcDayRange(daysAhead, now = new Date()) {
   const start = new Date(now);
@@ -13,7 +14,9 @@ function utcDayRange(daysAhead, now = new Date()) {
 
 async function runExpiryReminders(now = new Date()) {
   let reminders = 0;
-  for (const days of [7, 1, 0]) {
+  // The app shows a warning throughout the last 10 days; pushes are sent at
+  // these useful milestones and the dedupe key prevents repeat messages.
+  for (const days of [10, 3, 1, 0]) {
     const { start, end } = utcDayRange(days, now);
     const enrollments = await Enrollment.find({
       status: 'active',
@@ -39,6 +42,21 @@ async function runExpiryReminders(now = new Date()) {
             daysRemaining: days,
             validUntil: enrollment.validUntil,
             dedupeKey,
+          },
+        });
+        await sendNotificationPush({
+          title:
+            days === 0
+              ? 'Course access expires today'
+              : `Course access expires in ${days} day${days === 1 ? '' : 's'}`,
+          body: `${enrollment.course?.name || 'Your course'} is valid until ${enrollment.validUntil.toLocaleDateString('en-IN')}.`,
+          student: enrollment.student,
+          data: {
+            type: 'course_expiry_reminder',
+            enrollmentId: enrollment._id,
+            courseId: enrollment.course?._id || enrollment.course,
+            daysRemaining: days,
+            deepLink: `shahu://course/${enrollment.course?._id || enrollment.course}`,
           },
         });
         reminders += 1;

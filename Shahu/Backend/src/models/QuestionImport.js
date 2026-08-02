@@ -10,6 +10,8 @@ const schema = new mongoose.Schema(
     totalRows: Number,
     validRows: Number,
     invalidRows: Number,
+    duplicateRows: { type: Number, default: 0 },
+    hasExternalRows: { type: Boolean, default: false },
     status: { type: String, enum: ['previewed', 'imported', 'rejected'], default: 'previewed' },
     rows: [
       {

@@ -4,6 +4,8 @@ const apiResponse = require('../utils/apiResponse');
 const AppError = require('../utils/appError');
 const { STATUS_CODES } = require('../constants/statusCodes');
 const fs = require('fs/promises');
+const path = require('path');
+const { sendNotificationPush } = require('../services/notification.service');
 
 const discardUpload = (req) => req.file?.path ? fs.unlink(req.file.path).catch(() => undefined) : Promise.resolve();
 
@@ -53,6 +55,14 @@ const create = asyncHandler(async (req, res) => {
     await discardUpload(req);
     throw error;
   }
+  // A festival splash and a manually uploaded splash use this same record.
+  // Notify every opted-in device; a tap launches the app, which fetches the
+  // active splash screen again and displays it when its schedule is active.
+  void sendNotificationPush({
+    title: item.title || 'Academy update',
+    body: 'A new academy splash screen is available. Open the app to view it.',
+    data: { type: 'splash_screen', splashId: item._id },
+  }).catch(() => undefined);
   return apiResponse.success(res, { statusCode: STATUS_CODES.CREATED, message: 'Splash screen created', data: item });
 });
 const update = asyncHandler(async (req, res) => {
@@ -73,4 +83,15 @@ const remove = asyncHandler(async (req, res) => {
   if (!item) throw new AppError('Splash screen not found', STATUS_CODES.NOT_FOUND);
   return apiResponse.success(res, { message: 'Splash screen deleted' });
 });
-module.exports = { active, list, create, update, remove };
+const permanentlyRemove = asyncHandler(async (req, res) => {
+  const item = await SplashScreen.findOneAndDelete({ _id: req.params.id });
+  if (!item) throw new AppError('Splash screen not found', STATUS_CODES.NOT_FOUND);
+
+  const mediaUrls = [...new Set([item.imageUrl, item.videoUrl].filter(Boolean))];
+  await Promise.all(mediaUrls.map(async (url) => {
+    if (!String(url).startsWith('/uploads/')) return;
+    await fs.unlink(path.join(__dirname, '../uploads', path.basename(url))).catch(() => undefined);
+  }));
+  return apiResponse.success(res, { message: 'Splash screen permanently deleted' });
+});
+module.exports = { active, list, create, update, remove, permanentlyRemove };

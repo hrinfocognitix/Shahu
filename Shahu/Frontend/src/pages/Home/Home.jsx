@@ -305,6 +305,11 @@ export function Home() {
               }}>
               <span>{String(index + 1).padStart(2, '0')}</span>
               <FiBookOpen />
+              <div className="course-price-display">
+                <b>₹ {Number(course.fees || 0).toLocaleString('en-IN')}</b>
+                {course.actualPrice && Number(course.actualPrice) > Number(course.fees || 0) ? <del>₹ {Number(course.actualPrice).toLocaleString('en-IN')}</del> : null}
+                {course.discountPercent ? <small>{course.discountPercent}% OFF</small> : null}
+              </div>
               {(course.discountPercent || course.offerText) ? <div className="course-offer-highlight"><b>{course.discountPercent ? `${course.discountPercent}% OFF` : 'SPECIAL OFFER'}</b>{course.offerText ? <small>{course.offerText}</small> : null}</div> : null}
               <h3>{course.name}</h3>
               <p>{course.description}</p>

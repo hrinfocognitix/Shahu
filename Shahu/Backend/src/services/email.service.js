@@ -15,7 +15,7 @@ async function sendEmail({ to, subject, html, text, attachments }) {
     return { skipped: true, reason: 'SMTP is not configured' };
   }
   return createTransporter().sendMail({
-    from: env.smtp.user,
+    from: env.smtp.from,
     to,
     subject,
     html,

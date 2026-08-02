@@ -50,6 +50,9 @@ const courseSchema = new mongoose.Schema(
     validity: String,
     fees: { type: Number, min: 0, default: 0 },
     actualPrice: { type: Number, min: 0, default: 0 },
+    // Keeps the exact admin-entered currency presentation (for example, "10.00").
+    // Numeric fields and minor units remain the source for calculations and payments.
+    actualPriceDisplay: { type: String, trim: true, default: '0.00' },
     actualPriceMinor: { type: Number, min: 0, default: 0 },
     payablePriceMinor: { type: Number, min: 0, default: 0 },
     discountAmountMinor: { type: Number, min: 0, default: 0 },
@@ -69,6 +72,7 @@ const courseSchema = new mongoose.Schema(
     level: { type: String, enum: ['Beginner', 'Intermediate', 'Advanced', ''], default: '' },
     language: String,
     category: String,
+    courseType: { type: String, enum: ['UI', 'Professional'], default: 'Professional' },
     subjects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Subject' }],
     subjectDetails: [
       {
@@ -109,6 +113,21 @@ const courseSchema = new mongoose.Schema(
     benefits: [String],
     useCases: [String],
     highlights: [String],
+    priceHistory: [
+      {
+        previousActualPrice: { type: Number, min: 0, required: true },
+        updatedActualPrice: { type: Number, min: 0, required: true },
+        previousPayablePrice: { type: Number, min: 0, required: true },
+        updatedPayablePrice: { type: Number, min: 0, required: true },
+        previousDiscountType: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
+        updatedDiscountType: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
+        previousDiscountValue: { type: Number, min: 0, default: 0 },
+        updatedDiscountValue: { type: Number, min: 0, default: 0 },
+        reason: { type: String, trim: true, default: '' },
+        changedAt: { type: Date, default: Date.now },
+        changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      },
+    ],
     lastUpdatedReason: { type: String, trim: true, default: '' },
     lastDeletedReason: { type: String, trim: true, default: '' },
     actionHistory: [
@@ -211,11 +230,11 @@ courseSchema.pre('validate', async function setCourseFields() {
       if (discountValue > 100) throw new Error('Percentage discount cannot exceed 100%');
       this.discountValue = discountValue;
       this.discountPercent = discountValue;
-      this.fees = Math.max(0, Math.round(this.actualPrice - (this.actualPrice * discountValue / 100)));
+      this.fees = Math.max(0, Number((this.actualPrice - (this.actualPrice * discountValue / 100)).toFixed(2)));
     } else {
       if (discountValue > this.actualPrice) throw new Error('Fixed discount cannot exceed the actual price');
       this.discountValue = discountValue;
-      this.fees = Math.max(0, Math.round(this.actualPrice - discountValue));
+      this.fees = Math.max(0, Number((this.actualPrice - discountValue).toFixed(2)));
       this.discountPercent = this.actualPrice ? Number(((discountValue / this.actualPrice) * 100).toFixed(2)) : 0;
     }
   }

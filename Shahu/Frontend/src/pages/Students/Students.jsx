@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   FiCalendar,
   FiCreditCard,
@@ -16,10 +17,11 @@ const date = (value) => (value ? new Date(value).toLocaleDateString('en-IN') : '
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
 
 export function Students() {
+  const [searchParams] = useSearchParams();
   const [students, setStudents] = useState([]);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
-  const [course, setCourse] = useState('');
+  const [course, setCourse] = useState(searchParams.get('course') || '');
   const [purchaseFrom, setPurchaseFrom] = useState('');
   const [purchaseTo, setPurchaseTo] = useState('');
   const [sort, setSort] = useState('newest');
@@ -257,7 +259,18 @@ export function Students() {
                   {student.latestEnrollment?.status || 'no purchase'}
                 </span>
               </div>
-              <small>Valid until {date(student.latestEnrollment?.validUntil)}</small>
+              {student.purchasedCourses?.length ? (
+                <div className="student-purchased-course-list">
+                  {student.purchasedCourses.map((purchase, index) => (
+                    <small key={`${purchase.course}-${index}`}>
+                      {purchase.course}{purchase.courseCode ? ` · ${purchase.courseCode}` : ''} · {purchase.paymentMethod} · {money(purchase.paidAmount)} · {purchase.remainingDays ?? 0} days remaining
+                    </small>
+                  ))}
+                </div>
+              ) : null}
+              <small>
+                Valid {date(student.latestEnrollment?.validFrom)} — {date(student.latestEnrollment?.validUntil)} · {student.latestEnrollment?.remainingDays ?? 0} days remaining
+              </small>
               <small>
                 <FiSmartphone /> {student.deviceUuid || 'UUID not supplied'}
               </small>
@@ -300,6 +313,11 @@ export function Students() {
                   </span>
                   <span>Joined {date(details.student.createdAt)}</span>
                 </div>
+                <div className="student-identity">
+                  <span>Age: {details.student.profile?.age || '—'}</span>
+                  <span>Education: {details.student.profile?.educationQualification || '—'}</span>
+                  <span>Address: {details.student.profile?.address || '—'}</span>
+                </div>
                 <button className="student-credential-button" onClick={issueTemporaryPassword}>
                   <FiKey /> Issue temporary password
                 </button>
@@ -337,7 +355,7 @@ export function Students() {
                       Purchased {date(enrollment.purchaseDate)} · {enrollment.validityDays} days
                     </p>
                     <p>
-                      Valid {date(enrollment.validFrom)} — {date(enrollment.validUntil)}
+                      Valid {date(enrollment.validFrom)} — {date(enrollment.validUntil)} · {enrollment.remainingDays ?? 0} days remaining
                     </p>
                     <button
                       onClick={() =>
@@ -349,10 +367,34 @@ export function Students() {
                         })
                       }
                     >
-                      Change validity
+                      Renew / change validity
                     </button>
                   </div>
                 ))}
+              </section>
+              <section>
+                <h3>Mock-test performance</h3>
+                {details.attempts?.length ? (
+                  details.attempts.map((attempt) => {
+                    const percent = attempt.maximumScore
+                      ? Math.round((Number(attempt.score || 0) / Number(attempt.maximumScore)) * 100)
+                      : 0;
+                    return (
+                      <div className="enrollment-card" key={attempt._id}>
+                        <div>
+                          <b>{attempt.mockTest?.originalFilename || 'Question practice'}</b>
+                          <span className={`status-pill ${percent >= 40 ? 'active' : 'expired'}`}>
+                            {percent}%
+                          </span>
+                        </div>
+                        <p>{attempt.course?.name || 'Course'} · {attempt.subject?.name || 'Subject'}</p>
+                        <p>Marks: <b>{attempt.score || 0} / {attempt.maximumScore || 0}</b> · Submitted {date(attempt.submittedAt)}</p>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="muted">No mock-test attempts yet.</p>
+                )}
               </section>
               <section>
                 <h3>
@@ -375,6 +417,9 @@ export function Students() {
                       {transaction.receiptNumber || '—'}
                     </p>
                     <p>
+                      Receipt email: {transaction.receiptEmailedAt ? `sent ${date(transaction.receiptEmailedAt)}` : transaction.receiptEmailError ? `not sent — ${transaction.receiptEmailError}` : 'not sent yet'}
+                    </p>
+                    <p>
                       Original {money(transaction.pricing?.originalPrice)} · Discount{' '}
                       {transaction.pricing?.discountPercent || 0}% · Paid{' '}
                       {money(transaction.pricing?.paidAmount)}
@@ -383,6 +428,13 @@ export function Students() {
                       {date(transaction.paymentDate)} · Account:{' '}
                       {transaction.paymentAccount?.title || '—'}
                     </p>
+                    <p>
+                      Buyer: {transaction.buyer?.name || '—'} · {transaction.buyer?.email || '—'} · {transaction.buyer?.mobileNo || '—'}
+                    </p>
+                    <p>
+                      Age: {transaction.buyer?.age || '—'} · Education: {transaction.buyer?.education || '—'} · Device UUID: {transaction.buyer?.deviceUuid || '—'}
+                    </p>
+                    <p>Address: {transaction.buyer?.address || '—'}</p>
                   </div>
                 ))}
               </section>

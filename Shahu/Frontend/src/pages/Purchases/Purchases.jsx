@@ -1,19 +1,34 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { apiClient } from '../../api/axios';
-import { FiX } from 'react-icons/fi';
+import { useSelector } from 'react-redux';
+import { FiPlus, FiX } from 'react-icons/fi';
+
+const emptyManualPurchase = {
+  courseId: '', name: '', email: '', age: '', education: '', address: '', mobileNo: '',
+  transactionId: '', paymentMethod: 'gpay', paymentDate: new Date().toISOString().slice(0, 10), note: '',
+};
 
 export function Purchases() {
+  const user = useSelector((state) => state.auth.user);
   const [items, setItems] = useState([]);
+  const [manualPayments, setManualPayments] = useState([]);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState('');
   const [credentials, setCredentials] = useState(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualForm, setManualForm] = useState(emptyManualPurchase);
+  const [courses, setCourses] = useState([]);
   const load = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get('/course-purchases', { params: { status } });
+      const [response, manualResponse] = await Promise.all([
+        apiClient.get('/course-purchases', { params: { status } }),
+        apiClient.get('/admin/payments', { params: { status: status === 'pending' ? 'PENDING_VERIFICATION' : undefined } }),
+      ]);
       setItems(response.data.data || []);
+      setManualPayments(manualResponse.data.data || []);
     } finally {
       setLoading(false);
     }
@@ -21,6 +36,26 @@ export function Purchases() {
   useEffect(() => {
     load();
   }, [status]);
+  useEffect(() => {
+    if (user?.role !== 'superadmin') return;
+    apiClient.get('/courses', { params: { limit: 100, status: 'active' } })
+      .then((response) => setCourses(response.data.data || []))
+      .catch(() => setCourses([]));
+  }, [user?.role]);
+  const submitManualPurchase = async (event) => {
+    event.preventDefault();
+    try {
+      await apiClient.post('/course-purchases/manual', manualForm, {
+        headers: { 'X-Client-Platform': 'laptop' },
+      });
+      toast.success('Manual payment submitted. Verify it to create the student account.');
+      setManualForm(emptyManualPurchase);
+      setManualOpen(false);
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to submit manual payment');
+    }
+  };
   const verify = async (item, nextStatus) => {
     const reason = window.prompt(
       nextStatus === 'successful' ? 'Verification reason/reference' : 'Failure reason'
@@ -51,6 +86,22 @@ export function Purchases() {
       setWorking('');
     }
   };
+  const verifyManualPayment = async (item, action) => {
+    const approved = action === 'approve';
+    const message = approved
+      ? 'Confirm that this payment is visible in the receiving bank or UPI account before approving.'
+      : 'Enter the reason for rejecting this payment.';
+    const reason = window.prompt(message, approved ? 'Payment visible in receiving account' : 'Payment not found in receiving account');
+    if (!reason) return;
+    setWorking(item._id);
+    try {
+      await apiClient.post(`/admin/payments/${item._id}/${action}`, approved ? {} : { reason });
+      toast.success(approved ? 'Payment approved and course access activated.' : 'Payment rejected.');
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to update payment');
+    } finally { setWorking(''); }
+  };
   return (
     <section className="page-enter">
       <div className="page-heading">
@@ -68,6 +119,20 @@ export function Purchases() {
           <option value="successful">Successful</option>
           <option value="failed">Failed</option>
         </select>
+        {user?.role === 'superadmin' ? <button className="btn btn-primary" onClick={() => setManualOpen(true)}><FiPlus /> Add manual payment</button> : null}
+      </div>
+      <div className="purchase-operation-list">
+        <h2>Payment history</h2>
+        {manualPayments.length ? manualPayments.map((item) => (
+          <article className="purchase-operation-card" key={item._id}>
+            <div><h3>{item.course?.name || 'Course'}</h3><span className={`status-pill ${String(item.status).toLowerCase()}`}>{item.status}</span></div>
+            <p><b>{item.buyer?.name || 'Buyer'}</b> · {item.email} · {item.buyer?.mobileNo || 'No mobile number'}</p>
+            <p>Amount: <b>₹{Number(item.amount || 0).toFixed(2)}</b> · Provider: <b>{item.provider || 'upi'}</b> · Status: <b>{item.status}</b> · Reference: {item.transactionReference}</p>
+            <p>UTR: <b>{item.utrNumber || 'Not submitted'}</b> · App: {item.paymentApp || '—'} · Submitted: {item.submittedAt ? new Date(item.submittedAt).toLocaleString('en-IN') : '—'}</p>
+            {item.paymentScreenshotUrl ? <p><a href={item.paymentScreenshotUrl} target="_blank" rel="noreferrer">Open screenshot</a></p> : null}
+            {item.status === 'PENDING_VERIFICATION' ? <div className="purchase-actions"><button disabled={working === item._id} onClick={() => verifyManualPayment(item, 'approve')}>Approve</button><button disabled={working === item._id} className="danger" onClick={() => verifyManualPayment(item, 'reject')}>Reject</button><button onClick={() => navigator.clipboard?.writeText(item.utrNumber || '')}>Copy UTR</button></div> : null}
+          </article>
+        )) : <div className="card student-empty">No manual UPI payments need verification.</div>}
       </div>
       <div className="purchase-operation-list">
         {loading ? (
@@ -84,7 +149,7 @@ export function Purchases() {
               </p>
               <p>
                 Purchase ID: <b>{item.purchaseId || 'Legacy pending migration'}</b> · Transaction:{' '}
-                {item.transactionReference} · {item.paymentMethod}
+                {item.transactionReference} · {item.paymentMethod} · {item.submittedFrom || 'android'}
               </p>
               {item.receiptNumber ? (
                 <p>
@@ -142,6 +207,21 @@ export function Purchases() {
           </article>
         </div>
       )}
+      {manualOpen ? (
+        <div className="login-overlay" onMouseDown={() => setManualOpen(false)}>
+          <form className="student-form manual-payment-form" onMouseDown={(event) => event.stopPropagation()} onSubmit={submitManualPurchase}>
+            <button className="modal-close" onClick={() => setManualOpen(false)} type="button"><FiX /></button>
+            <p className="eyebrow">SUPERADMIN ONLY</p>
+            <h2>Add laptop payment</h2>
+            <p>Submit the payment first. The student account is created only after you verify it as successful.</p>
+            <select required value={manualForm.courseId} onChange={(event) => setManualForm((value) => ({ ...value, courseId: event.target.value }))}><option value="">Select course</option>{courses.map((course) => <option key={course._id} value={course._id}>{course.name}</option>)}</select>
+            <div className="student-fields"><input placeholder="Student full name" required value={manualForm.name} onChange={(event) => setManualForm((value) => ({ ...value, name: event.target.value }))} /><input placeholder="Student email" required type="email" value={manualForm.email} onChange={(event) => setManualForm((value) => ({ ...value, email: event.target.value }))} /><input placeholder="Mobile number" required value={manualForm.mobileNo} onChange={(event) => setManualForm((value) => ({ ...value, mobileNo: event.target.value }))} /><input min="1" placeholder="Age" required type="number" value={manualForm.age} onChange={(event) => setManualForm((value) => ({ ...value, age: event.target.value }))} /><input placeholder="Education" required value={manualForm.education} onChange={(event) => setManualForm((value) => ({ ...value, education: event.target.value }))} /><input placeholder="Transaction / UTR ID" required value={manualForm.transactionId} onChange={(event) => setManualForm((value) => ({ ...value, transactionId: event.target.value }))} /><select required value={manualForm.paymentMethod} onChange={(event) => setManualForm((value) => ({ ...value, paymentMethod: event.target.value }))}><option value="gpay">GPay</option><option value="phonepe">PhonePe</option><option value="paytm">Paytm</option><option value="bank-transfer">Bank transfer</option><option value="cash">Cash</option><option value="other">Other</option></select><input required type="date" value={manualForm.paymentDate} onChange={(event) => setManualForm((value) => ({ ...value, paymentDate: event.target.value }))} /></div>
+            <textarea placeholder="Address" required value={manualForm.address} onChange={(event) => setManualForm((value) => ({ ...value, address: event.target.value }))} />
+            <textarea placeholder="Message / payment note" value={manualForm.note} onChange={(event) => setManualForm((value) => ({ ...value, note: event.target.value }))} />
+            <button className="btn btn-primary">Submit manual payment</button>
+          </form>
+        </div>
+      ) : null}
     </section>
   );
 }

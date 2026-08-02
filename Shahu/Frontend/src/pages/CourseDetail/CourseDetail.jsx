@@ -11,6 +11,18 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { apiClient } from '../../api/axios';
 import { environment } from '../../config/environment';
 
+function loadRazorpayCheckout() {
+  if (window.Razorpay) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => resolve(Boolean(window.Razorpay));
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
 function resolveAssetUrl(path) {
   const assetBase = environment.apiBaseUrl.replace(/\/api\/v1$/, '');
   if (!path) return `${assetBase}/uploads/course-default-poster.png`;
@@ -22,6 +34,9 @@ export function CourseDetail() {
   const navigate = useNavigate();
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [paying, setPaying] = useState(false);
+  const [paymentMessage, setPaymentMessage] = useState('');
+  const [buyer, setBuyer] = useState({ name: '', email: '', mobileNo: '' });
 
   useEffect(() => {
     let active = true;
@@ -44,6 +59,45 @@ export function CourseDetail() {
       active = false;
     };
   }, [courseId]);
+
+  const startCheckout = async () => {
+    if (!buyer.name.trim() || !buyer.email.trim() || !buyer.mobileNo.trim()) {
+      setPaymentMessage('Enter your name, email, and mobile number before payment.');
+      return;
+    }
+    setPaying(true);
+    setPaymentMessage('');
+    try {
+      const scriptLoaded = await loadRazorpayCheckout();
+      if (!scriptLoaded) throw new Error('Unable to load the secure Razorpay checkout. Check your internet connection.');
+      const orderResponse = await apiClient.post('/payments/checkout/order', { courseId, ...buyer });
+      const order = orderResponse.data.data;
+      const checkout = new window.Razorpay({
+        key: order.keyId,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'Lokaraja Career Academy',
+        description: order.courseName || 'Course Payment',
+        order_id: order.order_id,
+        prefill: { name: buyer.name, email: buyer.email, contact: buyer.mobileNo },
+        theme: { color: '#5E4B3C' },
+        modal: { ondismiss: () => { setPaying(false); setPaymentMessage('Payment window closed. No payment was confirmed.'); } },
+        handler: async (response) => {
+          try {
+            await apiClient.post('/payments/checkout/verify', { paymentId: order.paymentId, ...response }, { headers: { 'X-Payment-Token': order.paymentToken } });
+            setPaymentMessage('Payment verified successfully. Your course access is being activated.');
+          } catch (error) {
+            setPaymentMessage(error.response?.data?.message || 'Payment could not be verified. Please contact support if money was debited.');
+          } finally { setPaying(false); }
+        },
+      });
+      checkout.on('payment.failed', () => { setPaying(false); setPaymentMessage('Payment failed or was cancelled. No amount was credited to the course.'); });
+      checkout.open();
+    } catch (error) {
+      setPaymentMessage(error.response?.data?.message || error.message || 'Unable to start payment.');
+      setPaying(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -195,18 +249,24 @@ export function CourseDetail() {
         )}
       </section>
 
-      <section className="course-purchase-info course-app-only">
+      <section className="course-purchase-info">
         <div className="section-header">
           <span className="eyebrow">Enrollment</span>
           <h2>Ready to join this course?</h2>
         </div>
         <div className="purchase-account-card">
           <FiCreditCard />
-          <h3>Open Lokaraja Career Academy on Android</h3>
-          <p>
-            Select this course in the app to view its assigned payment options and submit
-            transaction details securely.
-          </p>
+          <h3>Secure online payment</h3>
+          <p>Pay the academy-set course fee through Razorpay Standard Checkout.</p>
+          <div className="student-fields">
+            <input placeholder="Your full name" value={buyer.name} onChange={(event) => setBuyer((value) => ({ ...value, name: event.target.value }))} />
+            <input placeholder="Email address" type="email" value={buyer.email} onChange={(event) => setBuyer((value) => ({ ...value, email: event.target.value }))} />
+            <input placeholder="Mobile number" inputMode="tel" value={buyer.mobileNo} onChange={(event) => setBuyer((value) => ({ ...value, mobileNo: event.target.value }))} />
+          </div>
+          {paymentMessage ? <p className="muted">{paymentMessage}</p> : null}
+          <button className="btn btn-primary" type="button" disabled={paying} onClick={startCheckout}>
+            {paying ? 'Opening secure payment…' : `Pay ₹${Number(course.fees || 0).toFixed(2)}`}
+          </button>
         </div>
       </section>
     </main>

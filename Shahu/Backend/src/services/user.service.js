@@ -61,6 +61,9 @@ async function updateOwnPassword(userId, { currentPassword, newPassword }) {
   }
   user.password = await hashPassword(newPassword);
   user.mustChangePassword = false;
+  // A password change signs out every existing device, enforcing one active session.
+  user.authVersion = Number(user.authVersion || 0) + 1;
+  user.refreshTokens = [];
   await user.save();
   return user;
 }

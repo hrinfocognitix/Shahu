@@ -6,6 +6,8 @@ const Exam = require('../models/Exam');
 const AcademyRecord = require('../models/AcademyRecord');
 const asyncHandler = require('../utils/asyncHandler');
 const apiResponse = require('../utils/apiResponse');
+const AppError = require('../utils/appError');
+const { STATUS_CODES } = require('../constants/statusCodes');
 
 const registry = [
   ['courses', Course],
@@ -20,6 +22,8 @@ const registry = [
   ['reports', AcademyRecord, { module: 'report' }],
   ['payments', AcademyRecord, { module: 'payment' }]
 ];
+
+const registryByResource = new Map(registry.map(([resource, Model, extraFilter = {}]) => [resource, { Model, extraFilter }]));
 
 const listDeletedRecords = asyncHandler(async (req, res) => {
   const entries = await Promise.all(
@@ -36,4 +40,37 @@ const listDeletedRecords = asyncHandler(async (req, res) => {
   return apiResponse.success(res, { message: 'Deleted records fetched', data: entries });
 });
 
-module.exports = { listDeletedRecords };
+const permanentlyDeleteRecords = asyncHandler(async (req, res) => {
+  const records = Array.isArray(req.body.records) ? req.body.records : [];
+
+  if (!records.length) {
+    throw new AppError('Select at least one deleted item', STATUS_CODES.BAD_REQUEST);
+  }
+
+  const deletions = await Promise.all(
+    records.map(async ({ resource, id }) => {
+      const entry = registryByResource.get(resource);
+
+      if (!entry || !id) {
+        throw new AppError('Invalid deleted item selection', STATUS_CODES.BAD_REQUEST);
+      }
+
+      const result = await entry.Model.deleteOne({
+        _id: id,
+        ...entry.extraFilter,
+        isDeleted: true,
+      });
+
+      return result.deletedCount;
+    })
+  );
+
+  const deletedCount = deletions.reduce((total, count) => total + count, 0);
+
+  return apiResponse.success(res, {
+    message: `${deletedCount} deleted item(s) permanently removed`,
+    data: { deletedCount },
+  });
+});
+
+module.exports = { listDeletedRecords, permanentlyDeleteRecords };

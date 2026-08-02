@@ -10,6 +10,7 @@ const router = express.Router();
 
 router.use(authenticate);
 router.get('/me', userController.getProfile);
+router.patch('/me', userController.updateOwnProfile);
 router.patch('/me/password', validate(updatePasswordSchema), userController.updateOwnPassword);
 router.get('/', authorize(ROLES.ADMIN, ROLES.STAFF, ROLES.SUPERADMIN), userController.listUsers);
 router.get('/:id', authorize(ROLES.ADMIN, ROLES.STAFF, ROLES.SUPERADMIN), userController.getUser);

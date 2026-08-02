@@ -4,6 +4,9 @@ const schema = new mongoose.Schema(
     student: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
     subject: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: true },
+    // Each mobile mock-test page is recorded as its own attempt, allowing
+    // staff to review page-level marks for a student.
+    mockTest: { type: mongoose.Schema.Types.ObjectId, ref: 'QuestionImport', index: true },
     answers: [
       {
         question: { type: mongoose.Schema.Types.ObjectId, ref: 'Question', required: true },

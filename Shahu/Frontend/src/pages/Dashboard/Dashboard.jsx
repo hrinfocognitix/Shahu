@@ -9,6 +9,7 @@ import {
   FiClock,
   FiCreditCard,
   FiFileText,
+  FiSmartphone,
   FiTrendingUp,
   FiUserCheck,
   FiUsers,
@@ -35,6 +36,7 @@ export function Dashboard() {
     verifiedPurchases: 0,
     revenue: 0,
     recentPurchases: [],
+    appInstallations: 0,
   });
   const [purchases, setPurchases] = useState({ totals: {}, series: [] });
   useEffect(() => {
@@ -57,6 +59,7 @@ export function Dashboard() {
           verifiedPurchases: 0,
           revenue: 0,
           recentPurchases: [],
+          appInstallations: 0,
         })
       );
     dashboardService
@@ -122,6 +125,14 @@ export function Dashboard() {
             <small>Learning content</small>
             <span>{stats.materials + stats.videos}</span>
             <strong>{stats.exams} online exams</strong>
+          </div>
+        </Card>
+        <Card className="metric-card metric-students">
+          <FiSmartphone />
+          <div>
+            <small>App installations</small>
+            <span>{stats.appInstallations}</span>
+            <strong>Unique mobile devices</strong>
           </div>
         </Card>
       </div>

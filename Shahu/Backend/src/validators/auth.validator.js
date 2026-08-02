@@ -7,9 +7,10 @@ const registerSchema = Joi.object({
 });
 
 const loginSchema = Joi.object({
-  email: Joi.string().email().required(),
+  email: Joi.string().email(),
+  identifier: Joi.string().trim().min(3).max(254),
   password: Joi.string().required(),
-});
+}).or('email', 'identifier');
 
 const studentOtpSchema = Joi.object({
   email: Joi.string().email().required(),
@@ -22,4 +23,10 @@ const refreshSchema = Joi.object({
   refreshToken: Joi.string().required(),
 });
 
-module.exports = { registerSchema, loginSchema, studentOtpSchema, refreshSchema };
+const emailOtpRequestSchema = Joi.object({ email: Joi.string().email().max(254).required() });
+const emailOtpVerifySchema = Joi.object({
+  email: Joi.string().email().max(254).required(),
+  otp: Joi.string().pattern(/^\d{6}$/).required(),
+});
+
+module.exports = { registerSchema, loginSchema, studentOtpSchema, refreshSchema, emailOtpRequestSchema, emailOtpVerifySchema };

@@ -8,6 +8,7 @@ const Exam = require('../models/Exam');
 const Attendance = require('../models/Attendance');
 const Transaction = require('../models/Transaction');
 const Enrollment = require('../models/Enrollment');
+const AppInstallation = require('../models/AppInstallation');
 const mongoose = require('mongoose');
 const { ROLES } = require('../constants/roles');
 
@@ -42,6 +43,7 @@ const statistics = asyncHandler(async (req, res) => {
     upcomingExpirations,
     successfulTotals,
     recentPurchases,
+    appInstallations,
   ] = await Promise.all([
     User.countDocuments({ role: ROLES.STUDENT, isActive: true }),
     User.countDocuments({ role: ROLES.TEACHER, isActive: true }),
@@ -90,6 +92,7 @@ const statistics = asyncHandler(async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(6)
       .select('buyer course pricing status paymentDate transactionReference'),
+    AppInstallation.countDocuments(),
   ]);
   return apiResponse.success(res, {
     message: 'Dashboard statistics fetched',
@@ -108,6 +111,7 @@ const statistics = asyncHandler(async (req, res) => {
       verifiedPurchases: successfulTotals[0]?.purchases || 0,
       revenue: (successfulTotals[0]?.revenueMinor || 0) / 100,
       recentPurchases,
+      appInstallations,
     },
   });
 });

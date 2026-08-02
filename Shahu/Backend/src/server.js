@@ -6,10 +6,12 @@ const logger = require('./config/logger');
 const startCronJobs = require('./cron');
 const initSocket = require('./sockets');
 const { ensureDefaultAdmin } = require('./services/adminSeed.service');
+const { allowDuplicateSubjectNames } = require('./services/subjectIndex.service');
 
 async function bootstrap() {
   await connectDB();
   await ensureDefaultAdmin();
+  await allowDuplicateSubjectNames();
 
   const server = http.createServer(app);
   initSocket(server);

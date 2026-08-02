@@ -14,6 +14,13 @@ const getProfile = asyncHandler(async (req, res) =>
   apiResponse.success(res, { message: 'Profile fetched', data: req.user })
 );
 
+const updateOwnProfile = asyncHandler(async (req, res) => {
+  const allowedFields = ['mobile', 'phone', 'whatsapp', 'address', 'city', 'state', 'pinCode', 'gender', 'dateOfBirth', 'age', 'height', 'weight', 'qualification', 'educationQualification', 'schoolCollege', 'currentClass', 'fatherName', 'motherName', 'biography'];
+  const profile = Object.fromEntries(allowedFields.filter((key) => Object.prototype.hasOwnProperty.call(req.body.profile || {}, key)).map((key) => [key, req.body.profile[key]]));
+  const user = await userService.updateUser(req.user._id, { name: String(req.body.name || req.user.name).trim(), profile, updatedBy: req.user._id });
+  return apiResponse.success(res, { message: 'Profile updated', data: user });
+});
+
 const getUser = asyncHandler(async (req, res) => {
   const user = await userService.getUserById(req.params.id);
   if (!user) {
@@ -75,4 +82,4 @@ const permanentDeleteUser = asyncHandler(async (req, res) => {
   return apiResponse.success(res, { message: 'User permanently deleted' });
 });
 
-module.exports = { listUsers, getProfile, getUser, updateUser, updateOwnPassword, createUser, softDeleteUser, restoreUser, permanentDeleteUser };
+module.exports = { listUsers, getProfile, updateOwnProfile, getUser, updateUser, updateOwnPassword, createUser, softDeleteUser, restoreUser, permanentDeleteUser };

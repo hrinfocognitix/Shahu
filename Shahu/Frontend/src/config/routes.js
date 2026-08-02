@@ -30,6 +30,7 @@ export const ROUTES = {
   paymentAccounts: '/payment-accounts',
   coursePurchases: '/course-purchases',
   auditLogs: '/audit-logs',
+  deletedRecords: '/deleted-records',
   studentHome: '/student/home',
   studentCourses: '/student/courses',
   studentSyllabus: '/student/syllabus',

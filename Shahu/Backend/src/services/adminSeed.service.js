@@ -7,17 +7,25 @@ async function ensureDefaultAdmin() {
   const adminEmail = 'admin@cognitix.com';
   const defaultPassword = '12345678';
 
-  const superadmin = await User.findOne({ email: superadminEmail }).select('_id');
-  if (!superadmin) {
-    await User.create({
-      name: 'Cognitix Super Admin',
-      email: superadminEmail,
-      password: await hashPassword(defaultPassword),
-      initialPassword: defaultPassword,
-      role: ROLES.SUPERADMIN,
-      isActive: true
-    });
-  }
+  await User.findOneAndUpdate(
+    { email: superadminEmail },
+    {
+      $set: {
+        name: 'Cognitix Super Admin',
+        password: await hashPassword(defaultPassword),
+        initialPassword: defaultPassword,
+        role: ROLES.SUPERADMIN,
+        isActive: true,
+        isDeleted: false,
+        mustChangePassword: false
+      }
+    },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true
+    }
+  );
 
   const admin = await User.findOne({ email: adminEmail }).select('_id +initialPassword');
   if (admin) {

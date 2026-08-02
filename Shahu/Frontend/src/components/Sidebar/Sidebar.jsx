@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { ROUTES } from '../../config/routes';
 import {
   FiAward,
-  FiActivity,
   FiBell,
   FiBookOpen,
   FiCalendar,
@@ -14,7 +13,7 @@ import {
   FiGrid,
   FiImage,
   FiMonitor,
-  FiSettings,
+  FiTrash2,
   FiUser,
   FiUsers,
   FiVideo,
@@ -23,26 +22,21 @@ import founderLogo from '../../assets/lokaraja-founder.png';
 
 const links = [
   ['Dashboard', ROUTES.dashboard, FiGrid],
-  ['Users', ROUTES.users, FiUsers, 'superadmin'],
   ['Students', ROUTES.students, FiUsers, ['admin', 'superadmin']],
   ['Teachers', ROUTES.teachers, FiUsers, ['admin', 'superadmin']],
-  ['Courses', ROUTES.courses, FiBookOpen, ['admin', 'superadmin']],
   ['Subjects', ROUTES.subjects, FiClipboard],
+  ['Syllabus', ROUTES.learning, FiClipboard],
+  ['Courses', ROUTES.courses, FiBookOpen, ['admin', 'superadmin']],
   ['Payment Accounts', ROUTES.paymentAccounts, FiCreditCard, ['admin', 'superadmin']],
-  ['Course Purchases', ROUTES.coursePurchases, FiCreditCard, ['admin', 'superadmin']],
-  ['Syllabus & Learning', ROUTES.learning, FiFileText],
   ['Video Lectures', ROUTES.videos, FiVideo],
   ['Achievement Wall', ROUTES.achievements, FiAward, ['admin', 'superadmin']],
-  ['Gallery', ROUTES.gallery, FiImage],
   ['Calendar', ROUTES.calendar, FiCalendar],
   ['Online Exams', ROUTES.exams, FiMonitor],
-  ['Results', ROUTES.results, FiAward],
-  ['Attendance', ROUTES.attendance, FiClipboard],
+  ['Student Results', ROUTES.results, FiAward],
   ['Notifications', ROUTES.notifications, FiBell],
   ['Reports', ROUTES.reports, FiFileText, ['admin', 'superadmin']],
-  ['Audit Logs', ROUTES.auditLogs, FiActivity, 'superadmin'],
   ['Splash Screen Upload', ROUTES.settings, FiImage, ['admin', 'superadmin']],
-  ['Settings', ROUTES.settings, FiSettings, ['admin', 'superadmin']],
+  ['Deleted Items', ROUTES.deletedRecords, FiTrash2, 'superadmin'],
 ];
 const studentLinks = [
   ['Home', ROUTES.studentHome, FiGrid],

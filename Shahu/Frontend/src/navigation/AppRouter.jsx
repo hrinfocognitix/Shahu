@@ -20,6 +20,8 @@ import { Subjects } from '../pages/Subjects/Subjects';
 import { Learning } from '../pages/Learning/Learning';
 import { StudentWorkspace } from '../pages/StudentWorkspace/StudentWorkspace';
 import { AuditLogs } from '../pages/AuditLogs/AuditLogs';
+import { DeletedRecords } from '../pages/DeletedRecords/DeletedRecords';
+import { Calendar } from '../pages/Calendar/Calendar';
 import { ROUTES } from '../config/routes';
 
 export const router = createBrowserRouter([
@@ -47,6 +49,7 @@ export const router = createBrowserRouter([
           { path: ROUTES.paymentAccounts, element: <Management resource="payment-accounts" /> },
           { path: ROUTES.coursePurchases, element: <Purchases /> },
           { path: ROUTES.auditLogs, element: <AuditLogs /> },
+          { path: ROUTES.deletedRecords, element: <DeletedRecords /> },
           { path: ROUTES.subjects, element: <Subjects /> },
           { path: ROUTES.syllabus, element: <Learning /> },
           { path: ROUTES.learning, element: <Learning /> },
@@ -67,7 +70,7 @@ export const router = createBrowserRouter([
           { path: ROUTES.results, element: <Management resource="results" /> },
           { path: ROUTES.marks, element: <Management resource="marks" /> },
           { path: ROUTES.attendance, element: <Management resource="attendance" /> },
-          { path: ROUTES.calendar, element: <Management resource="calendar" /> },
+          { path: ROUTES.calendar, element: <Calendar /> },
           { path: ROUTES.announcements, element: <Management resource="announcements" /> },
           { path: ROUTES.gallery, element: <Management resource="gallery" /> },
           { path: ROUTES.achievements, element: <Management resource="achievements" /> },

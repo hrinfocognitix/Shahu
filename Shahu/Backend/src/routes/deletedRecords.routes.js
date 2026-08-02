@@ -6,6 +6,7 @@ const { ROLES } = require('../constants/roles');
 
 const router = express.Router();
 
-router.get('/', authenticate, authorize(ROLES.ADMIN, ROLES.SUPERADMIN), deletedRecordsController.listDeletedRecords);
+router.get('/', authenticate, authorize(ROLES.SUPERADMIN), deletedRecordsController.listDeletedRecords);
+router.delete('/', authenticate, authorize(ROLES.SUPERADMIN), deletedRecordsController.permanentlyDeleteRecords);
 
 module.exports = router;

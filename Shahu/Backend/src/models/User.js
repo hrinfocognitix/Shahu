@@ -15,6 +15,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       required: true,
     },
+    emailVerified: { type: Boolean, default: false },
     password: {
       type: String,
       required: true,
@@ -46,6 +47,8 @@ const userSchema = new mongoose.Schema(
       gender: { type: String, enum: ['male', 'female', 'other'] },
       dateOfBirth: Date,
       age: Number,
+      height: Number,
+      weight: Number,
       qualification: String,
       experience: String,
       specialization: String,

@@ -8,14 +8,32 @@ const SyllabusUnit = require('../models/SyllabusUnit');
 const LearningFile = require('../models/LearningFile');
 const Question = require('../models/Question');
 const QuestionImport = require('../models/QuestionImport');
+const QuestionImportRow = require('../models/QuestionImportRow');
 const QuestionAttempt = require('../models/QuestionAttempt');
 const Enrollment = require('../models/Enrollment');
 const AuditLog = require('../models/AuditLog');
 const AcademyRecord = require('../models/AcademyRecord');
 const Course = require('../models/Course');
+const Subject = require('../models/Subject');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs/promises');
+const os = require('os');
+const { execFile: executeFile } = require('child_process');
+const { promisify } = require('util');
 const env = require('../config/env');
+
+const execFile = promisify(executeFile);
+const OFFICE_MIME_TYPES = new Set([
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+const MAX_QUESTION_IMPORT_ROWS = Math.max(
+  1,
+  Number.parseInt(process.env.MAX_QUESTION_IMPORT_ROWS || '100000', 10) || 100000,
+);
+const IMPORT_ROW_BATCH_SIZE = 1000;
+const PREVIEW_ROW_SAMPLE_SIZE = 100;
 
 function signDownload(fileId, userId, role, now = Date.now()) {
   const payload = Buffer.from(
@@ -55,6 +73,15 @@ const normalizeQuestion = (value) =>
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase();
+const wordCount = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).length;
+const shuffle = (items) => {
+  const result = [...items];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+};
 async function assertSubjectAccess(req, subjectId) {
   if ([ROLES.ADMIN, ROLES.SUPERADMIN].includes(req.user.role)) return;
   if (
@@ -183,7 +210,7 @@ const listLearningFiles = asyncHandler(async (req, res) => {
   const filter = { isDeleted: { $ne: true } };
   if (req.query.course) filter.course = req.query.course;
   if (req.query.subject) filter.subject = req.query.subject;
-  if (['notes', 'question-paper', 'lecture', 'other'].includes(req.query.category)) {
+  if (['syllabus-copy', 'notes', 'generated-questions', 'question-paper', 'mock-test', 'other'].includes(req.query.category)) {
     filter.category = req.query.category;
   }
   if (req.user.role === ROLES.STUDENT) filter.status = 'published';
@@ -194,6 +221,8 @@ const listLearningFiles = asyncHandler(async (req, res) => {
     const value = item.toObject();
     const token = signDownload(item._id, req.user._id, req.user.role);
     value.downloadUrl = `${req.baseUrl}/files/${item._id}/download?token=${encodeURIComponent(token)}`;
+    value.previewUrl = `${req.baseUrl}/files/${item._id}/preview?token=${encodeURIComponent(token)}`;
+    value.previewMimeType = OFFICE_MIME_TYPES.has(item.mimeType) ? 'application/pdf' : item.mimeType;
     delete value.fileUrl;
     delete value.storedFilename;
     return value;
@@ -230,29 +259,92 @@ const downloadLearningFile = asyncHandler(async (req, res) => {
     throw new AppError('Download link is invalid', STATUS_CODES.FORBIDDEN);
   }
   const safeFilename = path.basename(item.storedFilename);
+  // The mobile app deliberately requests inline content for its private
+  // in-app preview cache.  Do not force Android to hand the material to an
+  // external downloader/application in that case.
+  if (req.query.inline === '1') {
+    res.type(item.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(item.originalFilename)}"`);
+    return res.sendFile(path.join(__dirname, '../uploads', safeFilename));
+  }
   return res.download(path.join(__dirname, '../uploads', safeFilename), item.originalFilename);
 });
+
+const previewLearningFile = asyncHandler(async (req, res) => {
+  let decoded;
+  try { decoded = verifyDownload(req.query.token); } catch { decoded = null; }
+  if (!decoded || String(decoded.fileId) !== String(req.params.id)) {
+    throw new AppError('Preview link is invalid', STATUS_CODES.FORBIDDEN);
+  }
+  const item = await LearningFile.findOne({ _id: req.params.id, isDeleted: { $ne: true } });
+  if (!item) throw new AppError('Learning file not found', STATUS_CODES.NOT_FOUND);
+  if (decoded.role === ROLES.STUDENT) {
+    const enrollment = await Enrollment.exists({ student: decoded.userId, course: item.course, status: 'active', validFrom: { $lte: new Date() }, validUntil: { $gte: new Date() } });
+    if (!enrollment) throw new AppError('Course access has expired or been revoked', STATUS_CODES.FORBIDDEN);
+  } else if (![ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.TEACHER].includes(decoded.role)) {
+    throw new AppError('Preview link is invalid', STATUS_CODES.FORBIDDEN);
+  }
+
+  const sourcePath = path.join(__dirname, '../uploads', path.basename(item.storedFilename));
+  if (!OFFICE_MIME_TYPES.has(item.mimeType)) {
+    if (!(item.mimeType === 'application/pdf' || item.mimeType.startsWith('image/') || item.mimeType.startsWith('text/'))) {
+      throw new AppError('This file type cannot be previewed in the app', 415);
+    }
+    res.type(item.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(item.originalFilename)}"`);
+    return res.sendFile(sourcePath);
+  }
+
+  // LibreOffice renders Office documents to a short-lived server-private PDF.
+  // Set LIBREOFFICE_BIN when the command is not named "soffice" on the server.
+  const temporaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shahu-preview-'));
+  const cleanup = () => fs.rm(temporaryDir, { recursive: true, force: true }).catch(() => undefined);
+  try {
+    await execFile(process.env.LIBREOFFICE_BIN || 'soffice', ['--headless', '--convert-to', 'pdf', '--outdir', temporaryDir, sourcePath], { timeout: 90000 });
+    const generated = (await fs.readdir(temporaryDir)).find(file => file.toLowerCase().endsWith('.pdf'));
+    if (!generated) throw new Error('LibreOffice did not produce a PDF.');
+    res.type('application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(path.basename(item.originalFilename, path.extname(item.originalFilename)))}.pdf"`);
+    res.once('finish', cleanup);
+    res.once('close', cleanup);
+    return res.sendFile(path.join(temporaryDir, generated));
+  } catch (error) {
+    await cleanup();
+    if (error && error.code === 'ENOENT') {
+      throw new AppError('Document preview conversion is not configured. Install LibreOffice on the server.', STATUS_CODES.SERVICE_UNAVAILABLE);
+    }
+    throw new AppError('This document could not be converted for preview.', STATUS_CODES.UNPROCESSABLE_ENTITY);
+  }
+});
 const createLearningFile = asyncHandler(async (req, res) => {
-  if (!req.file) throw new AppError('PDF, DOC, or DOCX file is required', 400);
+  if (!req.file) throw new AppError('A PDF, DOC, DOCX, or image file is required', 400);
   const allowed = [
     'application/pdf',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
   ];
   const allowedExtensions = new Map([
     ['application/pdf', '.pdf'],
     ['application/msword', '.doc'],
     ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
+    ['image/jpeg', '.jpg'],
+    ['image/png', '.png'],
+    ['image/webp', '.webp'],
   ]);
-  if (!allowed.includes(req.file.mimetype) || path.extname(req.file.originalname).toLowerCase() !== allowedExtensions.get(req.file.mimetype))
-    throw new AppError('Only PDF, DOC, and DOCX learning files are allowed', 400);
+  const extension = path.extname(req.file.originalname).toLowerCase();
+  const permittedExtensions = req.file.mimetype === 'image/jpeg' ? ['.jpg', '.jpeg'] : [allowedExtensions.get(req.file.mimetype)];
+  if (!allowed.includes(req.file.mimetype) || !permittedExtensions.includes(extension))
+    throw new AppError('Only PDF, DOC, DOCX, JPG, PNG, and WEBP learning files are allowed', 400);
   if (req.file.size > 25 * 1024 * 1024)
     throw new AppError('Learning file cannot exceed 25 MB', 400);
   await assertSubjectAccess(req, req.body.subject);
   await assertCourseSubject(req.body.course, req.body.subject);
   const item = await LearningFile.create({
     ...req.body,
-    category: ['notes', 'question-paper', 'lecture', 'other'].includes(req.body.category)
+    category: ['syllabus-copy', 'notes', 'generated-questions', 'question-paper', 'mock-test', 'other'].includes(req.body.category)
       ? req.body.category
       : 'notes',
     originalFilename: req.file.originalname,
@@ -288,6 +380,82 @@ const createLearningFile = asyncHandler(async (req, res) => {
     statusCode: 201,
     message: 'Learning file uploaded',
     data: item,
+  });
+});
+const importLearningFiles = asyncHandler(async (req, res) => {
+  const { course, subject, sourceCourse, sourceSubject } = req.body;
+  const categories = Array.isArray(req.body.categories) ? req.body.categories : [];
+  const allowedCategories = ['syllabus-copy', 'notes', 'generated-questions', 'question-paper', 'mock-test', 'other'];
+  const selectedCategories = [...new Set(categories.filter((category) => allowedCategories.includes(category)))];
+
+  if (!sourceCourse || !sourceSubject || !selectedCategories.length) {
+    throw new AppError('Source course, source subject, and at least one material type are required', 400);
+  }
+  if (String(course) === String(sourceCourse) && String(subject) === String(sourceSubject)) {
+    throw new AppError('Choose a different source course or subject to import material', 400);
+  }
+
+  await assertSubjectAccess(req, subject);
+  await assertSubjectAccess(req, sourceSubject);
+  await assertCourseSubject(course, subject);
+  await assertCourseSubject(sourceCourse, sourceSubject);
+
+  const sourceFiles = await LearningFile.find({
+    course: sourceCourse,
+    subject: sourceSubject,
+    category: { $in: selectedCategories },
+    status: 'published',
+    isDeleted: { $ne: true },
+  });
+  if (!sourceFiles.length) {
+    throw new AppError('No published material was found for the selected source', STATUS_CODES.NOT_FOUND);
+  }
+
+  const copiedSourceIds = await LearningFile.find({
+    course,
+    subject,
+    copiedFrom: { $in: sourceFiles.map((file) => file._id) },
+    isDeleted: { $ne: true },
+  }).distinct('copiedFrom');
+  const alreadyCopied = new Set(copiedSourceIds.map(String));
+  const filesToCopy = sourceFiles.filter((file) => !alreadyCopied.has(String(file._id)));
+  if (!filesToCopy.length) {
+    throw new AppError('The selected material has already been imported for this course and subject', 400);
+  }
+
+  const copiedFiles = await LearningFile.insertMany(
+    filesToCopy.map((file) => ({
+      course,
+      subject,
+      title: file.title,
+      description: file.description,
+      category: file.category,
+      unitTitle: file.unitTitle,
+      customType: file.customType,
+      originalFilename: file.originalFilename,
+      storedFilename: file.storedFilename,
+      fileUrl: file.fileUrl,
+      mimeType: file.mimeType,
+      fileSize: file.fileSize,
+      status: 'published',
+      copiedFrom: file._id,
+      createdBy: req.user._id,
+      updatedBy: req.user._id,
+    })),
+  );
+  await AuditLog.create({
+    user: req.user._id,
+    role: req.user.role,
+    action: 'learning_files_imported',
+    module: 'learning-files',
+    recordId: copiedFiles[0]._id,
+    newValue: { course, subject, sourceCourse, sourceSubject, categories: selectedCategories, count: copiedFiles.length },
+    ipAddress: req.ip,
+  });
+  return apiResponse.success(res, {
+    statusCode: 201,
+    message: `${copiedFiles.length} material file(s) imported`,
+    data: copiedFiles,
   });
 });
 const updateLearningFile = asyncHandler(async (req, res) => {
@@ -330,35 +498,29 @@ const removeLearningFile = asyncHandler(async (req, res) => {
 });
 
 const questionTemplate = asyncHandler(async (req, res) => {
-  const workbook = new ExcelJS.Workbook();
+  let workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Questions');
   sheet.addRow([
-    'Question',
-    'Option A',
-    'Option B',
-    'Option C',
-    'Option D',
-    'Correct Option',
-    'Explanation',
-    'Marks',
-    'Negative Marks',
-    'Difficulty',
-    'Chapter',
-    'Topic',
+    'क्रमांक',
+    'प्रकरण',
+    'प्रश्न',
+    'पर्याय अ',
+    'पर्याय ब',
+    'पर्याय क',
+    'पर्याय ड',
+    'योग्य उत्तर',
+    'स्पष्टीकरण',
   ]);
   sheet.addRow([
-    'Example question?',
-    'First answer',
-    'Second answer',
-    '',
-    '',
-    'A',
-    'Optional explanation',
     1,
-    0,
-    'medium',
-    'Unit 1',
-    'Topic 1',
+    'सामान्य ज्ञान',
+    'महाराष्ट्राची राजधानी कोणती आहे?',
+    'मुंबई',
+    'पुणे',
+    'नाशिक',
+    'नागपूर',
+    'अ',
+    'मुंबई ही महाराष्ट्राची राजधानी आहे.',
   ]);
   sheet.getRow(1).font = { bold: true };
   sheet.columns.forEach((column) => {
@@ -373,77 +535,147 @@ const questionTemplate = asyncHandler(async (req, res) => {
   res.end();
 });
 const previewQuestions = asyncHandler(async (req, res) => {
-  if (
-    !req.file ||
-    req.file.mimetype !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-    path.extname(req.file.originalname).toLowerCase() !== '.xlsx'
-  )
-    throw new AppError('A valid XLSX file is required', 400);
+  const extension = path.extname(req.file?.originalname || '').toLowerCase();
+  if (!req.file || !['.xlsx', '.csv'].includes(extension))
+    throw new AppError('Upload an .xlsx or .csv file. For a Mac Numbers file, use File → Export To → Excel or CSV first.', 400);
   await assertSubjectAccess(req, req.body.subject);
   await assertCourseSubject(req.body.course, req.body.subject);
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(req.file.path);
+  const selectedCourse = await Course.findById(req.body.course).select('subjects').lean();
+  const courseSubjects = await Subject.find({
+    // Admin workbook imports can include several existing academy subjects.
+    // Teachers remain restricted to subjects already attached to the course.
+    ...([ROLES.ADMIN, ROLES.SUPERADMIN].includes(req.user.role)
+      ? {}
+      : { _id: { $in: selectedCourse?.subjects || [] } }),
+    isDeleted: { $ne: true },
+  }).select('name');
+  const subjectIdsByName = new Map(
+    courseSubjects.map((subject) => [normalizeQuestion(subject.name), String(subject._id)])
+  );
+  let workbook = new ExcelJS.Workbook();
+  try {
+    if (extension === '.csv') await workbook.csv.readFile(req.file.path);
+    else {
+      try {
+        await workbook.xlsx.readFile(req.file.path);
+      } catch (xlsxError) {
+        // macOS applications occasionally save CSV text with an .xlsx suffix.
+        // Fall back to the CSV reader before declaring the upload unreadable.
+        const csvWorkbook = new ExcelJS.Workbook();
+        await csvWorkbook.csv.readFile(req.file.path);
+        if (!csvWorkbook.worksheets[0]?.rowCount) throw xlsxError;
+        workbook = csvWorkbook;
+      }
+    }
+  } catch {
+    throw new AppError('This file is not a readable .xlsx or .csv file. Download the template, or export your Numbers sheet to Excel/CSV, and try again.', 400);
+  }
   const sheet = workbook.worksheets[0];
   if (!sheet) throw new AppError('The workbook is empty', 400);
-  if (sheet.rowCount - 1 > 500)
-    throw new AppError('A maximum of 500 question rows is allowed', 400);
+  if (sheet.rowCount - 1 > MAX_QUESTION_IMPORT_ROWS)
+    throw new AppError(`A maximum of ${MAX_QUESTION_IMPORT_ROWS.toLocaleString()} question rows is allowed per upload`, 400);
   const headers = {};
   sheet.getRow(1).eachCell((cell, col) => {
     headers[String(cell.text).trim().toLowerCase()] = col;
   });
-  const get = (row, name) => row.getCell(headers[name] || 0).text.trim();
+  const get = (row, ...names) => {
+    const column = names.map((name) => headers[name.toLowerCase()]).find(Boolean);
+    return column ? row.getCell(column).text.trim() : '';
+  };
   const rows = [];
   const seen = new Set();
   for (let number = 2; number <= sheet.rowCount; number += 1) {
     const row = sheet.getRow(number);
     const data = {
-      questionText: get(row, 'question'),
-      optionA: get(row, 'option a'),
-      optionB: get(row, 'option b'),
-      optionC: get(row, 'option c'),
-      optionD: get(row, 'option d'),
-      correctOption: get(row, 'correct option').toUpperCase(),
-      explanation: get(row, 'explanation'),
+      sheetSubject: get(row, 'subject'),
+      questionText: get(row, 'question', 'प्रश्न'),
+      optionA: get(row, 'option1', 'option a', 'पर्याय अ'),
+      optionB: get(row, 'option2', 'option b', 'पर्याय ब'),
+      optionC: get(row, 'option3', 'option c', 'पर्याय क'),
+      optionD: get(row, 'option4', 'option d', 'पर्याय ड'),
+      correctAnswer: get(row, 'correctanswer', 'correct option', 'योग्य उत्तर'),
+      explanation: get(row, 'justification', 'explanation', 'स्पष्टीकरण'),
       marks: Number(get(row, 'marks') || 1),
-      negativeMarks: Number(get(row, 'negative marks') || 0),
+      negativeMarks: Number(get(row, 'negativemarks', 'negative marks') || 0),
       difficulty: (get(row, 'difficulty') || 'medium').toLowerCase(),
-      chapter: get(row, 'chapter'),
-      topic: get(row, 'topic'),
+      chapter: get(row, 'chapter', 'प्रकरण'),
+      topic: get(row, 'topic', 'प्रकरण'),
+      questionType: get(row, 'questiontype') || 'MCQ',
+      questionImage: get(row, 'questionimage'),
+      option1Image: get(row, 'option1image'),
+      option2Image: get(row, 'option2image'),
+      option3Image: get(row, 'option3image'),
+      option4Image: get(row, 'option4image'),
+      explanationImage: get(row, 'explanationimage'),
+      status: (get(row, 'status') || 'published').toLowerCase(),
     };
+    const answer = data.correctAnswer.trim();
+    const marathiOptionKeys = { 'अ': 'A', 'ब': 'B', 'क': 'C', 'ड': 'D' };
+    if (marathiOptionKeys[answer]) data.correctOption = marathiOptionKeys[answer];
+    else if (/^[a-d]$/i.test(answer)) data.correctOption = answer.toUpperCase();
+    else if (/^option\s*[1-4]$/i.test(answer)) {
+      data.correctOption = String.fromCharCode(64 + Number(answer.match(/[1-4]/)[0]));
+    } else {
+      data.correctOption = ['A', 'B', 'C', 'D'].find((key) => data[`option${key}`] === answer)
+        || ({ 'पर्याय अ': 'A', 'पर्याय ब': 'B', 'पर्याय क': 'C', 'पर्याय ड': 'D' }[answer])
+        || '';
+    }
+    // A workbook may contain several subjects. If a Subject column is present,
+    // resolve it only within the course selected by the admin. Blank values keep
+    // the subject selected from the card that opened this upload dialog.
+    data.subject = data.sheetSubject
+      ? subjectIdsByName.get(normalizeQuestion(data.sheetSubject))
+      : String(req.body.subject);
     if (!data.questionText && !data.optionA && !data.optionB) continue;
     const errors = [];
     const normalized = normalizeQuestion(data.questionText);
     if (!data.questionText) errors.push('Question is required');
+    if (!data.subject) errors.push(`Subject "${data.sheetSubject}" is not assigned to the selected course`);
     if (!data.optionA || !data.optionB) errors.push('Option A and Option B are required');
     if (!['A', 'B', 'C', 'D'].includes(data.correctOption) || !data[`option${data.correctOption}`])
       errors.push('Correct Option must match an available option');
     if (!Number.isFinite(data.marks) || data.marks < 0) errors.push('Marks must be non-negative');
     if (!Number.isFinite(data.negativeMarks) || data.negativeMarks < 0)
       errors.push('Negative Marks must be non-negative');
-    if (seen.has(normalized)) errors.push('Duplicate question in this upload');
-    seen.add(normalized);
+    if (wordCount(data.explanation) > 50) errors.push('Justification must be 50 words or fewer');
+    if (!['easy', 'medium', 'hard'].includes(data.difficulty)) errors.push('Difficulty must be easy, medium, or hard');
+    if (!['published', 'draft', 'archived'].includes(data.status)) errors.push('Status must be published, draft, or archived');
+    const duplicateKey = `${String(data.subject)}:${normalized}`;
+    const duplicateInUpload = seen.has(duplicateKey);
+    seen.add(duplicateKey);
     rows.push({
       rowNumber: number,
       data: { ...data, normalizedText: normalized },
-      valid: !errors.length,
+      // Keep the first occurrence and silently skip subsequent repeated rows.
+      // This lets a large source sheet import cleanly without presenting the
+      // same duplicate warning for every repeated question.
+      valid: !errors.length && !duplicateInUpload,
+      skipped: duplicateInUpload,
       validationErrors: errors,
     });
   }
-  const existing = new Set(
-    (
-      await Question.find({
-        course: req.body.course,
-        subject: req.body.subject,
-        normalizedText: { $in: rows.map((row) => row.data.normalizedText) },
-      }).select('normalizedText')
-    ).map((item) => item.normalizedText)
-  );
+  const existing = new Set();
+  const candidates = rows.filter((row) => row.data.subject);
+  // Keep the duplicate lookup under MongoDB's query-size limit for very large
+  // workbooks. Each batch is deliberately small enough for long questions too.
+  for (let index = 0; index < candidates.length; index += IMPORT_ROW_BATCH_SIZE) {
+    const matches = await Question.find({
+      course: req.body.course,
+      $or: candidates.slice(index, index + IMPORT_ROW_BATCH_SIZE).map((row) => ({
+        subject: row.data.subject,
+        normalizedText: row.data.normalizedText,
+      })),
+    }).select('subject normalizedText');
+    matches.forEach((item) => existing.add(`${String(item.subject)}:${item.normalizedText}`));
+  }
   rows.forEach((row) => {
-    if (existing.has(row.data.normalizedText)) {
+    if (existing.has(`${String(row.data.subject)}:${row.data.normalizedText}`)) {
       row.valid = false;
       row.validationErrors.push('Question already exists for this subject');
     }
   });
+  const validRows = rows.filter((row) => row.valid).length;
+  const duplicateRows = rows.filter((row) => row.skipped).length;
   const item = await QuestionImport.create({
     course: req.body.course,
     subject: req.body.subject,
@@ -451,11 +683,34 @@ const previewQuestions = asyncHandler(async (req, res) => {
     storedFilename: req.file.filename,
     fileUrl: `/uploads/${req.file.filename}`,
     totalRows: rows.length,
-    validRows: rows.filter((row) => row.valid).length,
-    invalidRows: rows.filter((row) => !row.valid).length,
-    rows,
+    validRows,
+    invalidRows: rows.length - validRows - duplicateRows,
+    duplicateRows,
+    hasExternalRows: true,
+    // The response keeps a compact preview for the portal; all import rows are
+    // stored separately so a 100,000-question paper remains valid in MongoDB.
+    rows: rows.slice(0, PREVIEW_ROW_SAMPLE_SIZE),
     createdBy: req.user._id,
   });
+  try {
+    for (let index = 0; index < rows.length; index += IMPORT_ROW_BATCH_SIZE) {
+      await QuestionImportRow.insertMany(
+        rows.slice(index, index + IMPORT_ROW_BATCH_SIZE).map((row) => ({
+          importBatch: item._id,
+          rowNumber: row.rowNumber,
+          data: row.data,
+          valid: row.valid,
+          skipped: row.skipped,
+          validationErrors: row.validationErrors,
+        })),
+        { ordered: true },
+      );
+    }
+  } catch (error) {
+    await QuestionImportRow.deleteMany({ importBatch: item._id });
+    await QuestionImport.deleteOne({ _id: item._id });
+    throw error;
+  }
   return apiResponse.success(res, { message: 'Question file previewed', data: item });
 });
 const confirmQuestions = asyncHandler(async (req, res) => {
@@ -463,13 +718,11 @@ const confirmQuestions = asyncHandler(async (req, res) => {
   if (!batch) throw new AppError('Question import not found', 404);
   await assertSubjectAccess(req, batch.subject);
   if (batch.status !== 'previewed') throw new AppError('Question import is already processed', 409);
-  const validRows = batch.rows.filter((row) => row.valid);
-  if (!validRows.length) throw new AppError('There are no valid rows to import', 400);
-  const questions = validRows.map((row) => {
+  const toQuestion = (row) => {
     const d = row.data;
     return {
       course: batch.course,
-      subject: batch.subject,
+      subject: d.subject || batch.subject,
       questionText: d.questionText,
       normalizedText: d.normalizedText,
       options: [
@@ -482,16 +735,57 @@ const confirmQuestions = asyncHandler(async (req, res) => {
         .map(([key, text]) => ({ key, text })),
       correctOption: d.correctOption,
       explanation: d.explanation,
+      questionType: d.questionType,
+      questionImage: d.questionImage,
+      optionImages: { A: d.option1Image, B: d.option2Image, C: d.option3Image, D: d.option4Image },
+      explanationImage: d.explanationImage,
       marks: d.marks,
       negativeMarks: d.negativeMarks,
       difficulty: ['easy', 'medium', 'hard'].includes(d.difficulty) ? d.difficulty : 'medium',
       chapter: d.chapter,
       topic: d.topic,
+      status: d.status,
       importBatch: batch._id,
       createdBy: req.user._id,
     };
-  });
-  await Question.insertMany(questions, { ordered: true });
+  };
+  const inlineValidRows = batch.rows.filter((row) => row.valid);
+  const hasValidRows = batch.hasExternalRows
+    ? await QuestionImportRow.exists({ importBatch: batch._id, valid: true })
+    : inlineValidRows.length > 0;
+  if (!hasValidRows) throw new AppError('There are no valid rows to import', 400);
+  let imported = 0;
+  const subjectIds = new Set();
+  const saveQuestions = async (rowsToSave) => {
+    const questions = rowsToSave.map(toQuestion);
+    questions.forEach((question) => subjectIds.add(String(question.subject)));
+    await Question.insertMany(questions, { ordered: true });
+    imported += questions.length;
+  };
+  if (batch.hasExternalRows) {
+    let rowsToSave = [];
+    const cursor = QuestionImportRow.find({ importBatch: batch._id, valid: true })
+      .sort({ rowNumber: 1 })
+      .cursor();
+    for await (const row of cursor) {
+      rowsToSave.push(row);
+      if (rowsToSave.length === IMPORT_ROW_BATCH_SIZE) {
+        await saveQuestions(rowsToSave);
+        rowsToSave = [];
+      }
+    }
+    if (rowsToSave.length) await saveQuestions(rowsToSave);
+  } else {
+    await saveQuestions(inlineValidRows);
+  }
+  // Keep the course subject list in sync with a multi-subject admin workbook.
+  // Only existing Subject records are resolved during preview, so this cannot
+  // create arbitrary subjects from spreadsheet text.
+  if ([ROLES.ADMIN, ROLES.SUPERADMIN].includes(req.user.role)) {
+    await Course.findByIdAndUpdate(batch.course, {
+      $addToSet: { subjects: { $each: [...subjectIds] } },
+    });
+  }
   batch.status = 'imported';
   batch.importedAt = new Date();
   batch.updatedBy = req.user._id;
@@ -502,13 +796,13 @@ const confirmQuestions = asyncHandler(async (req, res) => {
     action: 'questions_imported',
     module: 'questions',
     recordId: batch._id,
-    newValue: { count: questions.length },
+    newValue: { count: imported },
     ipAddress: req.ip,
   });
   await AcademyRecord.create({
     module: 'notification',
     title: 'New question bank available',
-    description: `${questions.length} questions are ready to attempt.`,
+    description: `${imported} questions are ready to attempt.`,
     course: batch.course,
     subject: batch.subject,
     audience: 'students',
@@ -516,12 +810,12 @@ const confirmQuestions = asyncHandler(async (req, res) => {
     payload: {
       type: 'question_bank_published',
       importBatchId: batch._id,
-      questionCount: questions.length,
+      questionCount: imported,
     },
   });
   return apiResponse.success(res, {
-    message: `${questions.length} questions imported`,
-    data: { imported: questions.length, rejected: batch.invalidRows },
+    message: `${imported} questions imported`,
+    data: { imported, rejected: batch.invalidRows },
   });
 });
 const listQuestions = asyncHandler(async (req, res) => {
@@ -536,26 +830,68 @@ const listQuestions = asyncHandler(async (req, res) => {
     .select('-normalizedText')
     .sort({ chapter: 1, createdAt: 1 })
     .limit(500);
-  return apiResponse.success(res, { message: 'Questions fetched', data: items });
+  // Shuffle every question's options before sending it to a student. Keys stay stable for scoring.
+  const randomizedItems = items.map((item) => ({ ...item.toObject(), options: shuffle(item.options || []) }));
+  return apiResponse.success(res, { message: 'Questions fetched', data: randomizedItems });
+});
+const listMockTests = asyncHandler(async (req, res) => {
+  await assertEnrollment(req, req.query.course);
+  const filter = { course: req.query.course, status: 'imported' };
+  if (req.query.subject) filter.subject = req.query.subject;
+  const items = await QuestionImport.find(filter)
+    .populate('subject', 'name subjectCode')
+    .sort({ importedAt: -1, createdAt: -1 })
+    .select('course subject originalFilename totalRows validRows importedAt createdAt');
+  return apiResponse.success(res, { message: 'Mock tests fetched', data: items });
+});
+const mockTestQuestions = asyncHandler(async (req, res) => {
+  const test = await QuestionImport.findById(req.params.id);
+  if (!test || test.status !== 'imported') throw new AppError('Mock test not found', 404);
+  await assertEnrollment(req, test.course);
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+  const filter = { importBatch: test._id, status: 'published', isDeleted: { $ne: true } };
+  const [total, items] = await Promise.all([
+    Question.countDocuments(filter),
+    Question.find(filter)
+    .select('-normalizedText')
+    .sort({ createdAt: 1, _id: 1 })
+    .skip((page - 1) * limit)
+    .limit(limit),
+  ]);
+  return apiResponse.success(res, {
+    message: 'Mock test questions fetched',
+    data: items.map((item) => ({ ...item.toObject(), options: shuffle(item.options || []) })),
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  });
 });
 const submitAnswers = asyncHandler(async (req, res) => {
   await assertEnrollment(req, req.body.course);
   const submittedAnswers = req.body.answers || [];
   if (!submittedAnswers.length) throw new AppError('At least one answer is required', 400);
+  const isMockTestAttempt = Boolean(req.body.mockTest);
+  if (isMockTestAttempt && submittedAnswers.length > 20) {
+    throw new AppError('A mock-test page can contain a maximum of 20 answers', 400);
+  }
   const ids = submittedAnswers.map((answer) => String(answer.question));
   if (new Set(ids).size !== ids.length)
     throw new AppError('Each question can be answered only once', 400);
-  const questions = await Question.find({
+  const questionFilter = {
     course: req.body.course,
     subject: req.body.subject,
     status: 'published',
     isDeleted: { $ne: true },
-  }).select('+correctOption +explanation');
+    ...(isMockTestAttempt ? { importBatch: req.body.mockTest, _id: { $in: ids } } : {}),
+  };
+  const questions = await Question.find(questionFilter).select('+correctOption +explanation');
   if (
     questions.length !== submittedAnswers.length ||
-    questions.some((question) => !ids.includes(String(question._id)))
+    questions.some((question) => !ids.includes(String(question._id))) ||
+    (!isMockTestAttempt && questions.length !== submittedAnswers.length)
   ) {
-    throw new AppError('Submit exactly one answer for every published question', 400);
+    throw new AppError(isMockTestAttempt
+      ? 'Submit exactly one answer for each question on this mock-test page'
+      : 'Submit exactly one answer for every published question', 400);
   }
   const byId = new Map(questions.map((question) => [String(question._id), question]));
   let score = 0;
@@ -583,6 +919,7 @@ const submitAnswers = asyncHandler(async (req, res) => {
     student: req.user._id,
     course: req.body.course,
     subject: req.body.subject,
+    ...(isMockTestAttempt ? { mockTest: req.body.mockTest } : {}),
     answers,
     score,
     maximumScore,
@@ -612,7 +949,9 @@ module.exports = {
   removeSyllabus,
   listLearningFiles,
   downloadLearningFile,
+  previewLearningFile,
   createLearningFile,
+  importLearningFiles,
   updateLearningFile,
   removeLearningFile,
   questionTemplate,
@@ -620,5 +959,7 @@ module.exports = {
   confirmQuestions,
   listQuestions,
   submitAnswers,
+  listMockTests,
+  mockTestQuestions,
   _internals: { signDownload, verifyDownload, assertSubjectAccess, assertCourseSubject },
 };

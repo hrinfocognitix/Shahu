@@ -20,6 +20,8 @@ const AppError = require('../utils/appError');
 const { STATUS_CODES } = require('../constants/statusCodes');
 const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
+const { isCompleteUpiId, normalizeUpiId } = require('../services/paymentIntent.service');
+const { sendNewCoursePush, sendNotificationPush } = require('../services/notification.service');
 
 const teacherRoles = [ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.TEACHER];
 const courseWriteRoles = [ROLES.ADMIN, ROLES.SUPERADMIN];
@@ -80,6 +82,45 @@ const canReadStudentCourse = async (request, item) => {
     })
   );
 };
+const validateLiveLecture = (body) => {
+  const scheduledAt = new Date(body.scheduledAt);
+  if (!body.scheduledAt || Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date()) {
+    throw new AppError('Live lecture date and time must be in the future', STATUS_CODES.BAD_REQUEST);
+  }
+  return scheduledAt;
+};
+const publishScheduledLecture = async (video) => {
+  const scheduledAt = new Date(video.scheduledAt);
+  if (!video.course || Number.isNaN(scheduledAt.getTime())) return;
+  const now = new Date();
+  const studentIds = await Enrollment.find({
+    course: video.course,
+    status: 'active',
+    validFrom: { $lte: now },
+    validUntil: { $gte: now },
+  }).distinct('student');
+
+  await CalendarEvent.create({
+    title: `Live lecture: ${video.title}`,
+    type: 'live-class',
+    startDate: scheduledAt,
+    description: video.description || 'Your scheduled live lecture is available in the app at the listed time.',
+    course: video.course,
+    createdBy: video.uploadedBy,
+  });
+
+  await sendNotificationPush({
+    title: 'Live lecture scheduled',
+    body: `${video.title} is scheduled for ${scheduledAt.toLocaleString('en-IN')}.`,
+    students: studentIds,
+    data: {
+      type: 'scheduled_lecture',
+      videoId: video._id,
+      courseId: video.course,
+      scheduledAt: scheduledAt.toISOString(),
+    },
+  });
+};
 const requireReason = (value, message) => {
   const normalized = String(value || '').trim();
   if (!normalized) {
@@ -106,9 +147,11 @@ const serverControlledCourseFields = new Set([
   'restoredBy',
   'isDeleted',
   'actionHistory',
+  'priceHistory',
   'lastUpdatedReason',
   'lastDeletedReason',
   'updateReason',
+  'statusReason',
   'deleteReason',
 ]);
 const buildCoursePayload = (request) => ({
@@ -119,20 +162,78 @@ const buildCoursePayload = (request) => ({
   ),
   updatedBy: request.user._id,
 });
-const createCoursePayload = (request) => ({
-  ...request.body,
-  createdBy: request.user._id,
-  updatedBy: request.user._id,
-  actionHistory: [buildCourseAuditEntry(request, 'created', 'Course created')],
-});
+const requireCourseField = (value, message) => {
+  if (!String(value || '').trim()) {
+    throw new AppError(message, STATUS_CODES.BAD_REQUEST);
+  }
+};
+const parseCurrencyAmount = (value, label) => {
+  const raw = String(value ?? '').trim();
+  if (!/^\d+(?:\.\d{1,2})?$/.test(raw)) {
+    throw new AppError(`${label} must use a maximum of two decimal places`, STATUS_CODES.BAD_REQUEST);
+  }
+  const amount = Number(raw);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new AppError(`${label} must be a valid amount`, STATUS_CODES.BAD_REQUEST);
+  }
+  return { amount, display: amount.toFixed(2) };
+};
+const createCoursePayload = (request) => {
+  const { body } = request;
+
+  requireCourseField(body.name, 'Course name is required');
+  requireCourseField(body.description, 'Course description is required');
+
+  if (!Number.isFinite(Number(body.durationDays)) || Number(body.durationDays) < 1) {
+    throw new AppError('Course validity in days is required', STATUS_CODES.BAD_REQUEST);
+  }
+  const originalPrice = parseCurrencyAmount(body.actualPrice, 'Original course price');
+  if (!Array.isArray(body.subjects) || body.subjects.length === 0) {
+    throw new AppError('Select at least one course subject', STATUS_CODES.BAD_REQUEST);
+  }
+  if (!Array.isArray(body.benefits) || body.benefits.length === 0) {
+    throw new AppError('Add at least one course benefit', STATUS_CODES.BAD_REQUEST);
+  }
+  if (!Array.isArray(body.useCases) || body.useCases.length === 0) {
+    throw new AppError('Add at least one course-help item', STATUS_CODES.BAD_REQUEST);
+  }
+
+  return {
+    ...body,
+    actualPrice: originalPrice.amount,
+    actualPriceDisplay: originalPrice.display,
+    createdBy: request.user._id,
+    updatedBy: request.user._id,
+    actionHistory: [buildCourseAuditEntry(request, 'created', 'Course created')],
+  };
+};
 const updateCoursePayload = async (request) => {
-  const reason = requireReason(
+  let reason = requireReason(
     request.body.updateReason,
     'Update reason is required for course changes'
   );
-  if (Array.isArray(request.body.subjects)) {
-    const existing = await Course.findById(request.params.id).select('subjects');
+  const statusWasSubmitted = Object.prototype.hasOwnProperty.call(request.body, 'status');
+  const priceWasSubmitted = ['actualPrice', 'discountType', 'discountValue', 'discountPercent'].some(
+    (key) => Object.prototype.hasOwnProperty.call(request.body, key)
+  );
+  let existing;
+
+  if (Array.isArray(request.body.subjects) || statusWasSubmitted || priceWasSubmitted) {
+    existing = await Course.findById(request.params.id).select(
+      'subjects status actualPrice fees discountType discountValue discountPercent'
+    );
     if (!existing) throw new AppError('Course not found', STATUS_CODES.NOT_FOUND);
+  }
+
+  if (statusWasSubmitted && request.body.status !== existing.status) {
+    const statusReason = requireReason(
+      request.body.statusReason,
+      'A reason is required to activate or deactivate a course'
+    );
+    reason = `Course ${request.body.status}: ${statusReason}`;
+  }
+
+  if (Array.isArray(request.body.subjects)) {
     const nextSubjects = new Set(request.body.subjects.map(String));
     const removedSubjects = (existing.subjects || []).filter(
       (subject) => !nextSubjects.has(String(subject))
@@ -151,15 +252,87 @@ const updateCoursePayload = async (request) => {
       }
     }
   }
+  const payload = buildCoursePayload(request);
+  let priceHistoryEntry;
+
+  if (payload.actualPrice !== undefined) {
+    const originalPrice = parseCurrencyAmount(payload.actualPrice, 'Original course price');
+    const actualPrice = originalPrice.amount;
+    const discountValue = Number(payload.discountValue || payload.discountPercent || 0);
+    const discountType = payload.discountType || 'percentage';
+
+    if (!Number.isFinite(actualPrice) || actualPrice < 0) {
+      throw new AppError('Original course price must be a valid amount', STATUS_CODES.BAD_REQUEST);
+    }
+    if (!Number.isFinite(discountValue) || discountValue < 0) {
+      throw new AppError('Course discount must be a valid amount', STATUS_CODES.BAD_REQUEST);
+    }
+    if (discountType === 'percentage' && discountValue > 100) {
+      throw new AppError('Percentage discount cannot exceed 100%', STATUS_CODES.BAD_REQUEST);
+    }
+    if (discountType === 'fixed' && discountValue > actualPrice) {
+      throw new AppError('Fixed discount cannot exceed the original price', STATUS_CODES.BAD_REQUEST);
+    }
+
+    const payablePrice =
+      discountType === 'fixed'
+        ? actualPrice - discountValue
+        : actualPrice - (actualPrice * discountValue) / 100;
+
+    payload.actualPrice = actualPrice;
+    payload.actualPriceDisplay = originalPrice.display;
+    payload.discountType = discountType;
+    payload.discountValue = discountValue;
+    payload.discountPercent =
+      discountType === 'percentage'
+        ? discountValue
+        : actualPrice
+          ? Number(((discountValue / actualPrice) * 100).toFixed(2))
+          : 0;
+    payload.fees = Math.max(0, Number(payablePrice.toFixed(2)));
+    payload.price = payload.fees;
+    payload.actualPriceMinor = Math.round(actualPrice * 100);
+    payload.payablePriceMinor = Math.round(payload.fees * 100);
+    payload.discountAmountMinor = Math.max(0, payload.actualPriceMinor - payload.payablePriceMinor);
+
+    if (
+      existing &&
+      (Number(existing.actualPrice || 0) !== actualPrice ||
+        Number(existing.fees || 0) !== payload.fees ||
+        String(existing.discountType || 'percentage') !== discountType ||
+        Number(existing.discountValue || existing.discountPercent || 0) !== discountValue)
+    ) {
+      priceHistoryEntry = {
+        previousActualPrice: Number(existing.actualPrice || 0),
+        updatedActualPrice: actualPrice,
+        previousPayablePrice: Number(existing.fees || 0),
+        updatedPayablePrice: payload.fees,
+        previousDiscountType: existing.discountType || 'percentage',
+        updatedDiscountType: discountType,
+        previousDiscountValue: Number(existing.discountValue || existing.discountPercent || 0),
+        updatedDiscountValue: discountValue,
+        reason,
+        changedAt: new Date(),
+        changedBy: request.user._id,
+      };
+    }
+  }
+
   return {
-    ...buildCoursePayload(request),
+    ...payload,
     lastUpdatedReason: reason,
-    $push: { actionHistory: buildCourseAuditEntry(request, 'updated', reason) },
+    $push: {
+      actionHistory: buildCourseAuditEntry(request, 'updated', reason),
+      ...(priceHistoryEntry ? { priceHistory: priceHistoryEntry } : {}),
+    },
   };
 };
 const removeCoursePayload = async (request) => {
+    console.log("================================= ID:", request.params.id);
+  console.log("================================= Query:", request.query);
+  console.log("================================= Body:", request.body);
   const reason = requireReason(
-    request.body.deleteReason || request.query.deleteReason,
+    request.body?.deleteReason || request.query.deleteReason,
     'Delete reason is required for course deletion'
   );
   const activeEnrollment = await Enrollment.exists({
@@ -209,6 +382,28 @@ const teacherCanPublish = async (request) => {
 };
 const buildPaymentAccount = async (request, creating = false) => {
   const payload = { ...(request.body.payload || {}) };
+  const upiId = normalizeUpiId(payload.upiId);
+  // A mobile number is contact information, not a VPA. Never persist it as a Pay Now UPI ID.
+  if (!isCompleteUpiId(upiId)) {
+    throw new AppError(
+      'Complete UPI ID is required and must include its @ handle (example: 7030901355@ibl). A mobile number alone cannot be used for Pay Now.',
+      STATUS_CODES.BAD_REQUEST
+    );
+  }
+  payload.upiId = upiId;
+  payload.paymentMode = payload.paymentMode === 'merchant-gateway' ? 'merchant-gateway' : 'direct-upi';
+  payload.merchantType = payload.merchantType === 'business' ? 'business' : 'personal';
+  payload.merchantDisplayName = String(payload.merchantDisplayName || payload.accountName || request.body.title || '').trim();
+  payload.merchantCategoryCode = String(payload.merchantCategoryCode || '').trim();
+  payload.upiHandleProvider = String(payload.upiHandleProvider || upiId.split('@')[1]).trim().toLowerCase();
+  payload.supportsGpay = payload.supportsGpay !== false;
+  payload.supportsPhonePe = payload.supportsPhonePe !== false;
+  payload.supportsBhim = payload.supportsBhim !== false;
+  payload.supportsPaytm = payload.supportsPaytm !== false;
+  payload.isQrEnabled = Boolean(payload.isQrEnabled);
+  payload.qrType = payload.qrType === 'dynamic' ? 'dynamic' : 'static';
+  payload.remarks = String(payload.remarks || '').trim();
+  payload.instructions = String(payload.instructions || '').trim();
   if (payload.defaultAccount === true) {
     await AcademyRecord.updateMany(
       { module: 'payment-account', _id: { $ne: request.params.id }, isDeleted: { $ne: true } },
@@ -230,6 +425,7 @@ module.exports = [
       resourceController(Course, {
         populate: 'subjects subjectDetails.subject',
         beforeCreate: createCoursePayload,
+        afterCreate: (course) => sendNewCoursePush(course),
         beforeUpdate: updateCoursePayload,
         beforeRemove: removeCoursePayload,
         beforePermanentRemove: preventReferencedCoursePermanentDelete,
@@ -296,9 +492,22 @@ module.exports = [
       resourceController(Content, {
         populate: 'course subject uploadedBy',
         defaultFilter: { type: 'video' },
-        beforeList: studentCourseFilter,
+        beforeList: async (req) => {
+          const courseFilter = await studentCourseFilter(req);
+          return req.user.role === ROLES.STUDENT
+            ? { ...courseFilter, $or: [{ scheduledAt: null }, { scheduledAt: { $lte: new Date() } }] }
+            : courseFilter;
+        },
         canRead: canReadStudentCourse,
-        beforeCreate: async (req) => ({ ...(await teacherCanPublish(req)), type: 'video' }),
+        beforeCreate: async (req) => {
+          validateLiveLecture(req.body);
+          return { ...(await teacherCanPublish(req)), type: 'video' };
+        },
+        afterCreate: publishScheduledLecture,
+        beforeUpdate: async (req) => {
+          if (Object.prototype.hasOwnProperty.call(req.body, 'scheduledAt')) validateLiveLecture(req.body);
+          return { ...req.body, updatedBy: req.user._id };
+        },
       }),
       { writeRoles: teacherRoles }
     ),
@@ -424,13 +633,25 @@ module.exports = [
     '/notifications',
     createResourceRouter(
       resourceController(AcademyRecord, {
-        populate: 'createdBy course subject',
+        populate: 'student createdBy course subject',
         defaultFilter: { module: 'notification' },
         beforeList: studentNotificationFilter,
         canRead: canReadNotification,
         beforeCreate: (req) => ({ ...req.body, module: 'notification', createdBy: req.user._id }),
+        afterCreate: (notification) =>
+          sendNotificationPush({
+            title: notification.title,
+            body: notification.description,
+            student: notification.student,
+            data: {
+              type: 'academy_notification',
+              notificationId: notification._id,
+              courseId: notification.course || '',
+              deepLink: notification.course ? `shahu://course/${notification.course}` : '',
+            },
+          }),
       }),
-      { writeRoles: teacherRoles }
+      { writeRoles: teacherRoles, permanentRemoveRoles: [ROLES.ADMIN, ROLES.SUPERADMIN] }
     ),
   ],
   [
@@ -484,9 +705,16 @@ module.exports = [
     '/course-purchases',
     (() => {
       const router = express.Router();
+      router.post('/request-otp', courseCommerceController.requestCourseOtp);
+      router.post('/verify-otp', courseCommerceController.verifyCourseOtp);
       router.get('/:courseId/payment-options', courseCommerceController.coursePaymentOptions);
       router.post('/', courseCommerceController.createPurchase);
       router.use(authenticate);
+      router.post(
+        '/manual',
+        authorize(ROLES.SUPERADMIN),
+        courseCommerceController.createPurchase
+      );
       router.get('/me', authorize(ROLES.STUDENT), courseCommerceController.myStudentProfile);
       router.get(
         '/',

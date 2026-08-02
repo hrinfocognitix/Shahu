@@ -2,7 +2,11 @@ const Course = require('../models/Course');
 const AcademyRecord = require('../models/AcademyRecord');
 const Transaction = require('../models/Transaction');
 const Enrollment = require('../models/Enrollment');
+const LearningFile = require('../models/LearningFile');
+const QuestionImport = require('../models/QuestionImport');
+const QuestionAttempt = require('../models/QuestionAttempt');
 const StudentDevice = require('../models/StudentDevice');
+const CoursePurchaseOtp = require('../models/CoursePurchaseOtp');
 const AuditLog = require('../models/AuditLog');
 const User = require('../models/User');
 const { hashPassword } = require('../helpers/bcrypt.helper');
@@ -16,11 +20,43 @@ const mongoose = require('mongoose');
 const { sendEmail } = require('../services/email.service');
 const { createReceiptPdf } = require('../services/receiptPdf.service');
 const logger = require('../config/logger');
+const { isCompleteUpiId, normalizeUpiId } = require('../services/paymentIntent.service');
 
 const createPurchaseId = () => {
   const day = new Date().toISOString().slice(0, 10).replaceAll('-', '');
   return `PUR-${day}-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
 };
+
+const hashCourseOtp = (courseId, code) => crypto.createHash('sha256').update(`course-purchase:${courseId}:${code}`).digest('hex');
+
+const requestCourseOtp = asyncHandler(async (req, res) => {
+  const { courseId, name, mobileNo, email, age, education, address } = req.body;
+  if (![courseId, name, mobileNo, email, age, education, address].every(value => String(value || '').trim())) throw new AppError('All enrollment fields are required', STATUS_CODES.BAD_REQUEST);
+  const course = await Course.findById(courseId).select('_id name status');
+  if (!course || course.status === 'inactive') throw new AppError('This course is unavailable', STATUS_CODES.NOT_FOUND);
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  const code = String(crypto.randomInt(100000, 1000000));
+  await CoursePurchaseOtp.findOneAndUpdate({ course: course._id, email: normalizedEmail }, { name: String(name).trim(), mobileNo: String(mobileNo).trim(), email: normalizedEmail, age: String(age).trim(), education: String(education).trim(), address: String(address).trim(), codeHash: hashCourseOtp(course._id, code), expiresAt, attempts: 0, verifiedAt: null }, { upsert: true, returnDocument: 'after', runValidators: true });
+  const delivery = await sendEmail({ to: normalizedEmail, subject: `Your ${course.name} enrollment OTP`, text: `Your enrollment OTP is ${code}. It expires in 10 minutes.`, html: `<p>Your enrollment OTP for <strong>${course.name}</strong> is:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It expires in 10 minutes.</p>` });
+  if (delivery?.skipped) throw new AppError('Email OTP delivery is not configured', STATUS_CODES.SERVICE_UNAVAILABLE);
+  return apiResponse.success(res, { message: 'OTP sent to your email', data: { expiresAt } });
+});
+
+const verifyCourseOtp = asyncHandler(async (req, res) => {
+  const { courseId, email, otp } = req.body;
+  if (!courseId || !email) throw new AppError('Course and email are required', STATUS_CODES.BAD_REQUEST);
+  if (!/^\d{6}$/.test(String(otp || ''))) throw new AppError('A valid six-digit OTP is required', STATUS_CODES.BAD_REQUEST);
+  const record = await CoursePurchaseOtp.findOne({ course: courseId, email: String(email).trim().toLowerCase() }).select('+codeHash');
+  if (!record || record.expiresAt < new Date() || record.attempts >= 5) throw new AppError('Invalid or expired OTP', STATUS_CODES.UNAUTHORIZED);
+  const supplied = Buffer.from(hashCourseOtp(courseId, String(otp)));
+  const expected = Buffer.from(record.codeHash);
+  if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) { record.attempts += 1; await record.save(); throw new AppError('Invalid or expired OTP', STATUS_CODES.UNAUTHORIZED); }
+  record.verifiedAt = new Date();
+  await record.save();
+  return apiResponse.success(res, { message: 'Email verified. You can continue to payment.' });
+});
 
 function normalizeValidity(course, paymentDate) {
   const days = Number(course.durationDays || 0);
@@ -55,9 +91,10 @@ function buildPricingSnapshot(course) {
 }
 
 const createPurchase = asyncHandler(async (req, res) => {
-  if (String(req.get('X-Client-Platform') || '').toLowerCase() !== 'android') {
+  const isManualSubmission = req.user?.role === ROLES.SUPERADMIN;
+  if (String(req.get('X-Client-Platform') || '').toLowerCase() !== 'android' && !isManualSubmission) {
     throw new AppError(
-      'Course purchases can be submitted only through the Android application',
+      'Course purchases can be submitted only through the Android application or by superadmin from the laptop',
       STATUS_CODES.FORBIDDEN
     );
   }
@@ -192,6 +229,7 @@ const createPurchase = asyncHandler(async (req, res) => {
           buyer: { name, email, mobileNo, deviceUuid, age: Number(age), education, address, photoUrl },
           pricing,
           paymentMethod, paymentDate: parsedPaymentDate,
+          submittedFrom: isManualSubmission ? 'laptop' : 'android',
           paymentAccountSnapshot: paymentAccount ? { title: paymentAccount.title, payload: paymentAccount.payload } : {},
           status: 'pending', note,
         }],
@@ -254,6 +292,8 @@ const coursePaymentOptions = asyncHandler(async (req, res) => {
   const unique = [...new Map(records.map((item) => [String(item._id), item])).values()];
   const data = unique.map((item) => {
     const payload = item.payload || {};
+    const upiId = normalizeUpiId(payload.upiId);
+    const completeUpiId = isCompleteUpiId(upiId) ? upiId : undefined;
     return {
       _id: item._id,
       title: item.title,
@@ -262,15 +302,17 @@ const coursePaymentOptions = asyncHandler(async (req, res) => {
         String(course.primaryPaymentAccount?._id || course.primaryPaymentAccount) ===
         String(item._id),
       payload: {
-        accountType: payload.accountType,
-        bankName: payload.bankName,
-        accountName: payload.accountName || payload.accountHolder,
-        accountNo: payload.accountNo || payload.accountNumber,
-        ifsc: payload.ifsc,
-        upiId: payload.upiId,
-        mobileNo: payload.mobileNo,
-        qrCode: payload.qrCode,
-        gatewayName: payload.gatewayName,
+        accountName: payload.merchantDisplayName || payload.accountName || payload.accountHolder,
+        // Do not fall back to mobileNo. Only a complete VPA is allowed in the mobile payment link.
+        upiId: completeUpiId,
+        paymentMode: payload.paymentMode || 'direct-upi',
+        supportsGpay: payload.supportsGpay !== false,
+        supportsPhonePe: payload.supportsPhonePe !== false,
+        supportsBhim: payload.supportsBhim !== false,
+        supportsPaytm: payload.supportsPaytm !== false,
+        isQrEnabled: Boolean(payload.isQrEnabled),
+        qrType: payload.qrType === 'dynamic' ? 'dynamic' : 'static',
+        qrCode: payload.isQrEnabled ? String(payload.qrCode || '').trim() : undefined,
       },
     };
   });
@@ -283,6 +325,9 @@ const verifyPurchase = asyncHandler(async (req, res) => {
     throw new AppError('Status must be successful or failed', STATUS_CODES.BAD_REQUEST);
   const transaction = await Transaction.findById(req.params.id).populate('course');
   if (!transaction) throw new AppError('Transaction not found', STATUS_CODES.NOT_FOUND);
+  if (transaction.submittedFrom === 'laptop' && req.user.role !== ROLES.SUPERADMIN) {
+    throw new AppError('Only superadmin can verify a laptop payment submission', STATUS_CODES.FORBIDDEN);
+  }
   if (transaction.status === status)
     return apiResponse.success(res, {
       message: 'Transaction already processed',
@@ -334,7 +379,8 @@ const verifyPurchase = asyncHandler(async (req, res) => {
   let student;
   let enrollment;
   let temporaryPassword;
-  const purchaseDate = transaction.paymentDate || new Date();
+  // Access starts when payment is actually verified, never when a pending request was created.
+  const purchaseDate = new Date();
   const validityDays = Number(transaction.course.durationDays || 1);
   const validUntil = new Date(purchaseDate);
   validUntil.setUTCDate(validUntil.getUTCDate() + validityDays);
@@ -386,7 +432,7 @@ const verifyPurchase = asyncHandler(async (req, res) => {
           },
           $set: { updatedBy: req.user._id },
         },
-        { upsert: true, new: true, runValidators: true, session }
+        { upsert: true, returnDocument: 'after', runValidators: true, session }
       );
       if (transaction.buyer.deviceUuid)
         await StudentDevice.findOneAndUpdate(
@@ -395,7 +441,7 @@ const verifyPurchase = asyncHandler(async (req, res) => {
             $set: { student: student._id, lastSeenAt: new Date(), isActive: true },
             $setOnInsert: { firstSeenAt: new Date(), platform: 'android' },
           },
-          { upsert: true, new: true, session }
+          { upsert: true, returnDocument: 'after', session }
         );
       transaction.student = student._id;
       transaction.status = 'successful';
@@ -483,11 +529,12 @@ const verifyPurchase = asyncHandler(async (req, res) => {
       transaction,
       enrollment,
     });
+    const transactionId = transaction.gatewayReference || transaction.transactionReference || transaction.purchaseId;
     const delivery = await sendEmail({
       to: student.email,
-      subject: `${transaction.course.name} purchase receipt`,
-      text: `Your course is active. Purchase tracking ID: ${transaction.purchaseId}. Receipt: ${transaction.receiptNumber}.`,
-      html: `<p>Your <strong>${transaction.course.name}</strong> course is active.</p><p>Purchase tracking ID: <strong>${transaction.purchaseId}</strong></p><p>Your payment and course-validity receipt is attached as a PDF.</p>`,
+      subject: `Payment successful — ${transaction.course.name} | Lokaraja Career Academy`,
+      text: `Dear ${student.name || 'Student'},\n\nThank you for your purchase. Your payment was successful and ${transaction.course.name} is now active.\nTransaction ID: ${transactionId}\nReceipt number: ${transaction.receiptNumber}\n\nप्रिय विद्यार्थी,\nतुमची फी यशस्वीरीत्या प्राप्त झाली आहे. ${transaction.course.name} हा कोर्स आता तुमच्या खात्यात सक्रिय आहे.\nव्यवहार क्रमांक: ${transactionId}\nपावती क्रमांक: ${transaction.receiptNumber}${temporaryPassword ? `\n\nTemporary password: ${temporaryPassword}\nPlease sign in and change it immediately.` : ''}\n\nYour payment receipt is attached. / तुमची पावती जोडलेली आहे.`,
+      html: `<p>Dear ${student.name || 'Student'},</p><p>Thank you for your purchase. Your payment was successful and <strong>${transaction.course.name}</strong> is now active.</p><p><strong>Transaction ID:</strong> ${transactionId}<br/><strong>Receipt number:</strong> ${transaction.receiptNumber}</p><hr/><p>प्रिय विद्यार्थी,</p><p>तुमची फी यशस्वीरीत्या प्राप्त झाली आहे. <strong>${transaction.course.name}</strong> हा कोर्स आता तुमच्या खात्यात सक्रिय आहे.</p><p><strong>व्यवहार क्रमांक:</strong> ${transactionId}<br/><strong>पावती क्रमांक:</strong> ${transaction.receiptNumber}</p>${temporaryPassword ? `<hr/><p><strong>Temporary password:</strong> ${temporaryPassword}</p><p>Please sign in and change this password immediately.</p>` : ''}<p>Your payment receipt is attached. / तुमची पावती जोडलेली आहे.</p>`,
       attachments: [
         {
           filename: `${transaction.receiptNumber}.pdf`,
@@ -562,19 +609,32 @@ const resetStudentPassword = asyncHandler(async (req, res) => {
 const studentDetails = asyncHandler(async (req, res) => {
   const student = await User.findOne({ _id: req.params.id, role: ROLES.STUDENT });
   if (!student) throw new AppError('Student not found', STATUS_CODES.NOT_FOUND);
-  const [enrollments, transactions, devices] = await Promise.all([
+  const [enrollments, transactions, devices, attempts] = await Promise.all([
     Enrollment.find({ student: student._id })
       .populate({ path: 'course', populate: { path: 'subjects' } })
       .populate('transaction')
       .sort({ purchaseDate: -1 }),
     Transaction.find({ student: student._id })
       .populate('course paymentAccount')
+      .select('+receiptEmailError')
       .sort({ createdAt: -1 }),
     StudentDevice.find({ student: student._id }).sort({ lastSeenAt: -1 }),
+    QuestionAttempt.find({ student: student._id })
+      .populate('course', 'name')
+      .populate('subject', 'name')
+      .populate('mockTest', 'originalFilename')
+      .sort({ submittedAt: -1 })
+      .limit(100),
   ]);
+  const now = Date.now();
+  const enrollmentData = enrollments.map((enrollment) => ({
+    ...enrollment.toObject(),
+    status: new Date(enrollment.validUntil).getTime() < now ? 'expired' : enrollment.status,
+    remainingDays: Math.max(0, Math.ceil((new Date(enrollment.validUntil).getTime() - now) / 86400000)),
+  }));
   return apiResponse.success(res, {
     message: 'Student commerce details fetched',
-    data: { student, enrollments, transactions, devices },
+    data: { student, enrollments: enrollmentData, transactions, devices, attempts },
   });
 });
 
@@ -593,9 +653,28 @@ const myStudentProfile = asyncHandler(async (req, res) => {
       .select('-paymentAccountSnapshot'),
     StudentDevice.find({ student: req.user._id }).sort({ lastSeenAt: -1 }),
   ]);
+  const now = Date.now();
+  const enrollmentData = enrollments.map((enrollment) => ({
+    ...enrollment.toObject(),
+    status: new Date(enrollment.validUntil).getTime() < now ? 'expired' : enrollment.status,
+    remainingDays: Math.max(0, Math.ceil((new Date(enrollment.validUntil).getTime() - now) / 86400000)),
+  }));
+  const activeCourseIds = enrollmentData
+    .filter((enrollment) => enrollment.status === 'active' && enrollment.remainingDays > 0)
+    .map((enrollment) => enrollment.course?._id || enrollment.course)
+    .filter(Boolean);
+  const [fileCategories, hasMockTests] = activeCourseIds.length
+    ? await Promise.all([
+      LearningFile.distinct('category', { course: { $in: activeCourseIds }, status: 'published', isDeleted: { $ne: true } }),
+      QuestionImport.exists({ course: { $in: activeCourseIds }, status: 'imported' }),
+    ])
+    : [[], false];
+  const materialCategories = hasMockTests
+    ? [...new Set([...fileCategories, 'mock-test'])]
+    : fileCategories;
   return apiResponse.success(res, {
     message: 'Student profile and purchases fetched',
-    data: { student: req.user, enrollments, transactions, devices },
+    data: { student: req.user, enrollments: enrollmentData, transactions, devices, materialCategories },
   });
 });
 
@@ -768,14 +847,57 @@ const studentList = asyncHandler(async (req, res) => {
     },
   ]);
   const total = result?.total?.[0]?.count || 0;
+  const listedStudents = result?.items || [];
+  const enrollments = listedStudents.length
+    ? await Enrollment.find({ student: { $in: listedStudents.map((item) => item._id) } })
+      .populate('course', 'name courseCode')
+      .populate('transaction', 'paymentMethod paymentDate pricing.paidAmount status')
+      .sort({ purchaseDate: -1 })
+    : [];
+  const purchasesByStudent = new Map();
+  enrollments.forEach((enrollment) => {
+    const studentId = String(enrollment.student);
+    const values = purchasesByStudent.get(studentId) || [];
+    values.push({
+      course: enrollment.course?.name || 'Course unavailable',
+      courseCode: enrollment.course?.courseCode || '',
+      paymentMethod: enrollment.transaction?.paymentMethod || 'Manual payment',
+      paidAmount: enrollment.transaction?.pricing?.paidAmount || 0,
+      purchaseDate: enrollment.purchaseDate,
+      status: enrollment.status,
+      validFrom: enrollment.validFrom,
+      validUntil: enrollment.validUntil,
+    });
+    purchasesByStudent.set(studentId, values);
+  });
+  const now = Date.now();
+  const data = listedStudents.map((student) => {
+    const latestEnrollment = student.latestEnrollment
+      ? {
+          ...student.latestEnrollment,
+          status: new Date(student.latestEnrollment.validUntil).getTime() < now ? 'expired' : student.latestEnrollment.status,
+          remainingDays: Math.max(0, Math.ceil((new Date(student.latestEnrollment.validUntil).getTime() - now) / 86400000)),
+        }
+      : null;
+    const purchasedCourses = (purchasesByStudent.get(String(student._id)) || []).map((purchase) => ({
+      ...purchase,
+      status: new Date(purchase.validUntil).getTime() < now ? 'expired' : purchase.status,
+      validFrom: purchase.validFrom,
+      validUntil: purchase.validUntil,
+      remainingDays: Math.max(0, Math.ceil((new Date(purchase.validUntil).getTime() - now) / 86400000)),
+    }));
+    return { ...student, latestEnrollment, purchasedCourses };
+  });
   return apiResponse.success(res, {
     message: 'Students fetched',
-    data: result?.items || [],
+    data,
     meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
   });
 });
 
 module.exports = {
+  requestCourseOtp,
+  verifyCourseOtp,
   createPurchase,
   listPurchases,
   coursePaymentOptions,

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FiEdit2, FiEye, FiPlus, FiTrash2, FiX } from 'react-icons/fi';
+import { useNavigate } from 'react-router-dom';
+import { FiBookOpen, FiEdit2, FiEye, FiPlus, FiTrash2, FiUsers, FiX } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { apiClient } from '../../api/axios';
 import { environment } from '../../config/environment';
@@ -41,6 +42,8 @@ const initialCourse = {
   fees: '',
   durationDays: '',
   actualPrice: '',
+  courseType: 'Professional',
+  hasDiscount: false,
   discountType: 'percentage',
   discountValue: '',
   discountPercent: '',
@@ -52,6 +55,7 @@ const initialCourse = {
   benefitsText: '',
   useCasesText: '',
   highlightsText: '',
+  statusReason: '',
   detailSections: [],
   subjects: [],
   subjectDetails: [],
@@ -63,6 +67,20 @@ const initialAccount = {
   qrCode: '',
   mobileNo: '',
   upiId: '',
+  paymentMode: 'direct-upi',
+  merchantType: 'personal',
+  merchantDisplayName: '',
+  merchantCategoryCode: '',
+  upiHandleProvider: '',
+  supportsGpay: true,
+  supportsPhonePe: true,
+  supportsBhim: true,
+  supportsPaytm: true,
+  isQrEnabled: false,
+  qrType: 'static',
+  qrFile: null,
+  remarks: '',
+  instructions: '',
   accountNo: '',
   ifsc: '',
   accountType: 'upi',
@@ -72,7 +90,7 @@ const initialAccount = {
   defaultAccount: false,
   status: 'active',
 };
-const initialRecord = { title: '', description: '', course: '', status: 'active', resourceUrl: '' };
+const initialRecord = { title: '', description: '', course: '', subject: '', scheduledAt: '', status: 'active', resourceUrl: '' };
 const initialAchievement = {
   title: '',
   description: '',
@@ -100,6 +118,7 @@ const resolveAssetUrl = (path) => {
 };
 
 export function Management({ resource }) {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [courses, setCourses] = useState([]);
   const [paymentAccounts, setPaymentAccounts] = useState([]);
@@ -121,7 +140,16 @@ export function Management({ resource }) {
       if (!isCourse && !isPurchases)
         requests.push(apiClient.get('/courses', { params: { limit: 100 } }));
       const [response, courseResponse] = await Promise.all(requests);
-      setItems(response.data.data || []);
+      const records = response.data.data || [];
+      setItems(
+        isCourse
+          ? [...records].sort(
+              (first, second) =>
+                new Date(second.createdAt || 0).getTime() -
+                new Date(first.createdAt || 0).getTime()
+            )
+          : records
+      );
       if (courseResponse) setCourses(courseResponse.data.data || []);
     } catch (error) {
       toast.error(
@@ -177,7 +205,9 @@ export function Management({ resource }) {
         ...item,
         fees: item.fees ?? '',
         durationDays: item.durationDays ?? '',
-        actualPrice: item.actualPrice || item.price || item.fees || '',
+        actualPrice: item.actualPriceDisplay ?? item.actualPrice ?? item.price ?? item.fees ?? '',
+        courseType: item.courseType || 'Professional',
+        hasDiscount: Number(item.discountValue ?? item.discountPercent ?? 0) > 0,
         discountType: item.discountType || 'percentage',
         discountValue: item.discountValue ?? item.discountPercent ?? '',
         benefitsText: joinLines(item.benefits),
@@ -200,6 +230,8 @@ export function Management({ resource }) {
         title: item.title || item.name || '',
         description: item.description || '',
         course: item.course?._id || item.course || '',
+        subject: item.subject?._id || item.subject || '',
+        scheduledAt: item.scheduledAt ? new Date(item.scheduledAt).toISOString().slice(0, 16) : '',
         status: item.status || 'active',
         resourceUrl: item.resourceUrl || '',
         media: item.media || [],
@@ -240,6 +272,11 @@ export function Management({ resource }) {
     try {
       let payload;
       if (isCourse) {
+        if (!form.subjects?.length) {
+          toast.error('Select at least one subject for this course');
+          return;
+        }
+
         let imageUrl = form.imageUrl;
         if (form.imageFile) {
           const uploadData = new FormData();
@@ -247,20 +284,30 @@ export function Management({ resource }) {
           const upload = await apiClient.post('/upload', uploadData);
           imageUrl = upload.data.data.url;
         }
+        const statusChanged = editing && form.status !== editing.status;
+        if (statusChanged && !String(form.statusReason || '').trim()) {
+          toast.error('Enter a reason before changing the course status');
+          return;
+        }
         payload = {
           ...form,
           imageUrl,
           durationDays: Number(form.durationDays || 0),
-          actualPrice: Number(form.actualPrice || 0),
+          actualPrice: String(form.actualPrice || '0').trim(),
           discountType: form.discountType || 'percentage',
-          discountValue: Number(form.discountValue || 0),
+          discountValue: form.hasDiscount ? Number(form.discountValue || 0) : 0,
           offerText: String(form.offerText || '').trim(),
           benefits: splitLines(form.benefitsText),
           useCases: splitLines(form.useCasesText),
           highlights: splitLines(form.highlightsText),
-          updateReason: editing ? 'Course details updated from admin panel' : undefined,
+          updateReason: editing
+            ? statusChanged
+              ? `Course ${form.status}: ${form.statusReason}`
+              : 'Course details updated from admin panel'
+            : undefined,
         };
         delete payload.imageFile;
+        delete payload.hasDiscount;
         delete payload.benefitsText;
         delete payload.useCasesText;
         delete payload.highlightsText;
@@ -272,14 +319,39 @@ export function Management({ resource }) {
         delete payload.__v;
         delete payload._id;
       } else if (isAccount)
-        payload = {
+        if (!/^[a-z0-9._-]{2,256}@[a-z0-9._-]{2,64}$/i.test(String(form.upiId || '').trim())) {
+          toast.error('Enter a complete UPI ID with @ handle, for example 7030901355@ibl');
+          return;
+        } else
+        {
+          let qrCode = form.qrCode;
+          if (form.qrFile) {
+            const uploadData = new FormData();
+            uploadData.append('file', form.qrFile);
+            const upload = await apiClient.post('/upload', uploadData);
+            qrCode = upload.data.data.url;
+          }
+          payload = {
           title: form.title,
           description: form.description,
           payload: {
             accountName: form.accountName,
-            qrCode: form.qrCode,
+            qrCode,
             mobileNo: form.mobileNo,
             upiId: form.upiId,
+            paymentMode: form.paymentMode,
+            merchantType: form.merchantType,
+            merchantDisplayName: form.merchantDisplayName,
+            merchantCategoryCode: form.merchantCategoryCode,
+            upiHandleProvider: form.upiHandleProvider,
+            supportsGpay: Boolean(form.supportsGpay),
+            supportsPhonePe: Boolean(form.supportsPhonePe),
+            supportsBhim: Boolean(form.supportsBhim),
+            supportsPaytm: Boolean(form.supportsPaytm),
+            isQrEnabled: Boolean(form.isQrEnabled),
+            qrType: form.qrType,
+            remarks: form.remarks,
+            instructions: form.instructions,
             accountNo: form.accountNo,
             ifsc: form.ifsc,
             accountType: form.accountType,
@@ -288,8 +360,9 @@ export function Management({ resource }) {
             merchantId: form.merchantId,
             defaultAccount: Boolean(form.defaultAccount),
           },
-          status: form.status,
-        };
+            status: form.status,
+          };
+        }
       else {
         let resourceUrl = form.resourceUrl;
         if (resource === 'achievements') {
@@ -405,11 +478,11 @@ export function Management({ resource }) {
         ) : (
           items.map((item) => (
             <article className="resource-row" key={item._id}>
-              {resource === 'achievements' && item.resourceUrl ? (
+              {(resource === 'achievements' && item.resourceUrl) || (isCourse && item.imageUrl) ? (
                 <img
-                  className="achievement-thumbnail"
-                  src={resolveAssetUrl(item.resourceUrl)}
-                  alt={item.title}
+                  className="achievement-thumbnail course-thumbnail"
+                  src={resolveAssetUrl(item.resourceUrl || item.imageUrl)}
+                  alt={item.title || item.name || 'Course image'}
                 />
               ) : (
                 <span className="resource-mark">
@@ -417,7 +490,17 @@ export function Management({ resource }) {
                 </span>
               )}
               <div>
-                <strong>{item.name || item.title || item.payload?.studentName}</strong>
+                <div className="resource-title-row">
+                  <strong>{item.name || item.title || item.payload?.studentName}</strong>
+                  {isCourse ? (
+                    <small>
+                      Created{' '}
+                      {item.createdAt
+                        ? new Date(item.createdAt).toLocaleDateString('en-IN')
+                        : 'recently'}
+                    </small>
+                  ) : null}
+                </div>
                 <p>
                   {isPurchases
                     ? `${item.payload?.studentName} · ${item.payload?.mobileNo} · ${item.payload?.transactionId}`
@@ -442,10 +525,44 @@ export function Management({ resource }) {
                       : 'not set'}
                   </small>
                 )}
+                {isCourse && (
+                  <>
+                    <small className="course-list-meta">
+                      {item.courseCode || item.courseId || 'Course code pending'} · {item.courseType || 'Professional'} · Current price ₹{Number(item.fees ?? item.actualPrice ?? 0).toLocaleString('en-IN')}
+                      {item.actualPrice && Number(item.actualPrice) !== Number(item.fees) ? (
+                        <> · Original ₹{Number(item.actualPrice).toLocaleString('en-IN')}</>
+                      ) : null}
+                    </small>
+                    {item.priceHistory?.length ? (
+                      <details className="course-price-history">
+                        <summary>Price update history ({item.priceHistory.length})</summary>
+                        {item.priceHistory.slice().reverse().map((change, index) => (
+                          <small key={`${change.changedAt || index}-${index}`}>
+                            {change.changedAt
+                              ? new Date(change.changedAt).toLocaleString('en-IN')
+                              : 'Recently'}{' '}
+                            · ₹{Number(change.previousPayablePrice || 0).toLocaleString('en-IN')} → ₹{Number(change.updatedPayablePrice || 0).toLocaleString('en-IN')}
+                            {change.reason ? ` · ${change.reason}` : ''}
+                          </small>
+                        ))}
+                      </details>
+                    ) : null}
+                  </>
+                )}
               </div>
               <span className="status-pill">{item.status || 'active'}</span>
               {!isPurchases && (
                 <div className="row-actions">
+                  {isCourse ? (
+                    <>
+                      <button className="text-button" onClick={() => navigate(`/learning?course=${item._id}`)}>
+                        <FiBookOpen /> Syllabus
+                      </button>
+                      <button className="text-button" onClick={() => navigate(`/students?course=${item._id}`)}>
+                        <FiUsers /> Users
+                      </button>
+                    </>
+                  ) : null}
                   <button className="text-button" onClick={() => beginEdit(item)}>
                     <FiEdit2 /> Edit
                   </button>
@@ -475,9 +592,7 @@ export function Management({ resource }) {
               <CourseFields
                 form={form}
                 update={update}
-                addSection={addSection}
-                changeSection={changeSection}
-                changeItem={changeItem}
+                editing={editing}
                 paymentAccounts={paymentAccounts}
                 activeSubjects={activeSubjects}
               />
@@ -496,32 +611,22 @@ export function Management({ resource }) {
   );
 }
 
-function CourseFields({ form, update, addSection, changeSection, changeItem, paymentAccounts, activeSubjects }) {
+function CourseFields({ form, update, editing, paymentAccounts, activeSubjects }) {
   const original = Number(form.actualPrice || 0);
-  const discount = Number(form.discountValue || 0);
-  const payable = Math.max(
-    0,
-    Math.round(
-      form.discountType === 'fixed' ? original - discount : original - (original * discount) / 100
-    )
-  );
+  const discount = form.hasDiscount ? Number(form.discountValue || 0) : 0;
+  const payable = Math.max(0, Number((form.discountType === 'fixed' ? original - discount : original - (original * discount) / 100).toFixed(2)));
   const selectedSubjectIds = (form.subjects || []).map((item) => item._id || item);
-  const subjectDetail = (subjectId) =>
-    (form.subjectDetails || []).find(
-      (detail) => String(detail.subject?._id || detail.subject) === String(subjectId)
-    ) || { subject: subjectId, description: '', displayOrder: selectedSubjectIds.indexOf(subjectId), sections: [] };
-  const updateSubjectDetail = (subjectId, changes) => {
-    const next = selectedSubjectIds.map((id, index) => {
-      const current = subjectDetail(id);
-      return String(id) === String(subjectId)
-        ? { ...current, ...changes, subject: id }
-        : { ...current, subject: id, displayOrder: current.displayOrder ?? index };
-    });
-    update('subjectDetails', next);
-  };
   return (
     <div className="student-fields">
+      <h3 className="full-field course-form-heading">Course essentials</h3>
       <Field label="Course name" value={form.name} onChange={(value) => update('name', value)} />
+      <label>
+        <span>Course type</span>
+        <select value={form.courseType || 'Professional'} onChange={(event) => update('courseType', event.target.value)}>
+          <option value="UI">UI</option>
+          <option value="Professional">Professional</option>
+        </select>
+      </label>
       <Field
         label="Validity (days)"
         type="number"
@@ -529,34 +634,47 @@ function CourseFields({ form, update, addSection, changeSection, changeItem, pay
         onChange={(value) => update('durationDays', value)}
       />
       <div className="course-offer-fields">
+        <h3>Pricing and offer</h3>
         <Field
           label="Original price (INR)"
           type="number"
+          step="0.01"
           value={form.actualPrice}
           onChange={(value) => update('actualPrice', value)}
         />
-        <label>
-          <span>Discount type</span>
-          <select
-            value={form.discountType || 'percentage'}
-            onChange={(event) => update('discountType', event.target.value)}
-          >
-            <option value="percentage">Percentage (%)</option>
-            <option value="fixed">Fixed amount (INR)</option>
-          </select>
+        <label className="course-discount-toggle">
+          <input
+            checked={Boolean(form.hasDiscount)}
+            onChange={(event) => update('hasDiscount', event.target.checked)}
+            type="checkbox"
+          />
+          <span>Add a discount for this course</span>
         </label>
-        <Field
-          label={
-            form.discountType === 'fixed' ? 'Discount amount (INR)' : 'Discount percentage (%)'
-          }
-          type="number"
-          value={form.discountValue}
-          onChange={(value) => update('discountValue', value)}
-          required={false}
-        />
+        {form.hasDiscount ? (
+          <>
+            <label>
+              <span>Discount type</span>
+              <select
+                value={form.discountType || 'percentage'}
+                onChange={(event) => update('discountType', event.target.value)}
+              >
+                <option value="percentage">Percentage (%)</option>
+                <option value="fixed">Fixed amount (INR)</option>
+              </select>
+            </label>
+            <Field
+              label={
+                form.discountType === 'fixed' ? 'Discount amount (INR)' : 'Discount percentage (%)'
+              }
+              type="number"
+              value={form.discountValue}
+              onChange={(value) => update('discountValue', value)}
+            />
+          </>
+        ) : null}
         <label>
           <span>Payable price (calculated)</span>
-          <input value={`₹${payable.toLocaleString('en-IN')}`} readOnly />
+          <input value={`₹${payable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} readOnly />
         </label>
         <Field
           label="Admin offer highlight"
@@ -569,6 +687,7 @@ function CourseFields({ form, update, addSection, changeSection, changeItem, pay
           admission offer.
         </small>
       </div>
+      <h3 className="full-field course-form-heading">Payment and availability</h3>
       <label>
         <span>Primary payment account</span>
         <select
@@ -584,9 +703,28 @@ function CourseFields({ form, update, addSection, changeSection, changeItem, pay
         </select>
         <small>This is the account shown to Android buyers for this course.</small>
       </label>
+      <label>
+        <span>Course status</span>
+        <select value={form.status || 'active'} onChange={(event) => update('status', event.target.value)}>
+          <option value="active">Active — visible to students</option>
+          <option value="inactive">Inactive — hidden from students</option>
+        </select>
+      </label>
+      {editing && form.status !== editing.status ? (
+        <Field
+          label={`Reason for changing status to ${form.status}`}
+          value={form.statusReason}
+          onChange={(value) => update('statusReason', value)}
+          placeholder="Example: Admissions are temporarily closed"
+        />
+      ) : null}
+      <h3 className="full-field course-form-heading">Subjects</h3>
       <fieldset className="full-field subject-picker">
-        <legend>Course subjects</legend>
-        {activeSubjects.map((subject) => {
+        <legend>Select course subjects</legend>
+        <small>Choose one or more subjects saved in the subject database.</small>
+        {activeSubjects.length === 0 ? (
+          <p className="muted">No active subjects are available. Create a subject first.</p>
+        ) : activeSubjects.map((subject) => {
           const selectedSubjects = selectedSubjectIds;
           return (
             <label key={subject._id}>
@@ -598,35 +736,17 @@ function CourseFields({ form, update, addSection, changeSection, changeItem, pay
                     ? selectedSubjects.filter((id) => id !== subject._id)
                     : [...new Set([...selectedSubjects, subject._id])];
                   update('subjects', nextSubjects);
-                  update(
-                    'subjectDetails',
-                    nextSubjects.map((id, index) => ({
-                      ...subjectDetail(id),
-                      subject: id,
-                      displayOrder: subjectDetail(id).displayOrder ?? index,
-                    }))
-                  );
                 }}
               />
-              <span><b>{subject.name}</b><small>{subject.description || subject.subjectCode}</small></span>
+              <span>
+                <b>{subject.name}</b>
+                <small>Course code: {subject.subjectCode || subject.subjectId || 'Not assigned'}</small>
+              </span>
             </label>
           );
         })}
       </fieldset>
-      {!!selectedSubjectIds.length && <div className="full-field course-subject-details">
-        <strong>Subject descriptions and sections</strong>
-        <small>Sections are displayed in the entered order on the website and student app.</small>
-        {selectedSubjectIds.map((subjectId, index) => {
-          const subject = activeSubjects.find((item) => item._id === subjectId);
-          const detail = subjectDetail(subjectId);
-          return <article key={subjectId}>
-            <h3>{subject?.name || `Subject ${index + 1}`}</h3>
-            <textarea value={detail.description || ''} placeholder="Subject description" onChange={(event) => updateSubjectDetail(subjectId, { description: event.target.value })} />
-            <input type="number" min="0" value={detail.displayOrder ?? index} aria-label={`${subject?.name || 'Subject'} display order`} onChange={(event) => updateSubjectDetail(subjectId, { displayOrder: Number(event.target.value || 0) })} />
-            <textarea value={(detail.sections || []).map((section) => section.title).join('\n')} placeholder="Sections, one per line" onChange={(event) => updateSubjectDetail(subjectId, { sections: splitLines(event.target.value).map((title, sectionIndex) => ({ title, displayOrder: sectionIndex })) })} />
-          </article>;
-        })}
-      </div>}
+      <h3 className="full-field course-form-heading">Image and course details</h3>
       <CourseImagePreview form={form} />
       <label>
         <span>Upload course image</span>
@@ -654,87 +774,13 @@ function CourseFields({ form, update, addSection, changeSection, changeItem, pay
         as="textarea"
         value={form.benefitsText}
         onChange={(value) => update('benefitsText', value)}
-        required={false}
       />
       <Field
         label="Where this course helps (one per line)"
         as="textarea"
         value={form.useCasesText}
         onChange={(value) => update('useCasesText', value)}
-        required={false}
       />
-      <Field
-        label="Highlights (one per line)"
-        as="textarea"
-        value={form.highlightsText}
-        onChange={(value) => update('highlightsText', value)}
-        required={false}
-      />
-      <div className="detail-builder">
-        <div>
-          <strong>Syllabus and resources</strong>
-          <button type="button" className="text-button" onClick={addSection}>
-            <FiPlus /> Add section
-          </button>
-        </div>
-        {form.detailSections.map((section, sectionIndex) => (
-          <div className="detail-builder-section" key={sectionIndex}>
-            <input
-              placeholder="Section title"
-              value={section.title}
-              onChange={(event) => changeSection(sectionIndex, 'title', event.target.value)}
-            />
-            <textarea
-              placeholder="Section description"
-              value={section.description}
-              onChange={(event) => changeSection(sectionIndex, 'description', event.target.value)}
-            />
-            {section.items.map((item, itemIndex) => (
-              <div className="detail-builder-item" key={itemIndex}>
-                <input
-                  placeholder="Resource label"
-                  value={item.label}
-                  onChange={(event) =>
-                    changeItem(sectionIndex, itemIndex, 'label', event.target.value)
-                  }
-                />
-                <select
-                  value={item.type}
-                  onChange={(event) =>
-                    changeItem(sectionIndex, itemIndex, 'type', event.target.value)
-                  }
-                >
-                  <option value="notes">Notes</option>
-                  <option value="question-paper">Question paper</option>
-                  <option value="question-list">Question list</option>
-                  <option value="link">Link</option>
-                  <option value="document">Document</option>
-                  <option value="other">Other</option>
-                </select>
-                <input
-                  placeholder="Resource details or URL"
-                  value={item.value}
-                  onChange={(event) =>
-                    changeItem(sectionIndex, itemIndex, 'value', event.target.value)
-                  }
-                />
-              </div>
-            ))}
-            <button
-              type="button"
-              className="text-button"
-              onClick={() =>
-                changeSection(sectionIndex, 'items', [
-                  ...section.items,
-                  { label: '', type: 'other', value: '' },
-                ])
-              }
-            >
-              <FiPlus /> Add resource
-            </button>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -797,8 +843,22 @@ function AccountFields({ form, update }) {
         label="Complete UPI ID for Pay Now (example: name@okaxis)"
         value={form.upiId}
         onChange={(value) => update('upiId', value)}
-        required={false}
       />
+      <label><span>Payment mode</span><select value={form.paymentMode || 'direct-upi'} onChange={(event) => update('paymentMode', event.target.value)}><option value="direct-upi">Direct UPI</option><option value="merchant-gateway">Merchant Gateway</option></select></label>
+      <label><span>Merchant type</span><select value={form.merchantType || 'personal'} onChange={(event) => update('merchantType', event.target.value)}><option value="personal">Personal</option><option value="business">Business</option></select></label>
+      <Field label="Merchant display name" value={form.merchantDisplayName} onChange={(value) => update('merchantDisplayName', value)} required={false} />
+      <Field label="Merchant category code (optional)" value={form.merchantCategoryCode} onChange={(value) => update('merchantCategoryCode', value)} required={false} />
+      <Field label="UPI handle provider (for example: ibl, okaxis, ybl)" value={form.upiHandleProvider} onChange={(value) => update('upiHandleProvider', value)} required={false} />
+      <div className="payment-support-options">
+        <label><input checked={Boolean(form.supportsGpay)} onChange={(event) => update('supportsGpay', event.target.checked)} type="checkbox" /> Supports GPay</label>
+        <label><input checked={Boolean(form.supportsPhonePe)} onChange={(event) => update('supportsPhonePe', event.target.checked)} type="checkbox" /> Supports PhonePe</label>
+        <label><input checked={Boolean(form.supportsBhim)} onChange={(event) => update('supportsBhim', event.target.checked)} type="checkbox" /> Supports BHIM</label>
+        <label><input checked={Boolean(form.supportsPaytm)} onChange={(event) => update('supportsPaytm', event.target.checked)} type="checkbox" /> Supports Paytm</label>
+      </div>
+      <label><input checked={Boolean(form.isQrEnabled)} onChange={(event) => update('isQrEnabled', event.target.checked)} type="checkbox" /> Enable QR payment</label>
+      {form.isQrEnabled ? <><label><span>QR type</span><select value={form.qrType || 'static'} onChange={(event) => update('qrType', event.target.value)}><option value="static">Static</option><option value="dynamic">Dynamic</option></select></label><Field label="QR code image URL" value={form.qrCode} onChange={(value) => update('qrCode', value)} required={false} /><label><span>Upload QR code image</span><input accept="image/*" type="file" onChange={(event) => update('qrFile', event.target.files?.[0] || null)} /></label>{form.qrCode ? <img alt="Payment QR preview" className="payment-qr-preview" src={resolveAssetUrl(form.qrCode)} /> : null}</> : null}
+      <Field label="Payment instructions" as="textarea" value={form.instructions} onChange={(value) => update('instructions', value)} required={false} />
+      <Field label="Remarks" as="textarea" value={form.remarks} onChange={(value) => update('remarks', value)} required={false} />
       <Field
         label="Bank account number"
         value={form.accountNo}
@@ -833,6 +893,9 @@ function AccountFields({ form, update }) {
 }
 function RecordFields({ form, update, courses, resource }) {
   const isAchievement = resource === 'achievements';
+  const isVideo = resource === 'videos';
+  const selectedCourse = courses.find((course) => String(course._id) === String(form.course));
+  const subjects = selectedCourse?.subjectDetails || selectedCourse?.subjects || [];
   return (
     <div className="student-fields">
       <Field
@@ -853,6 +916,16 @@ function RecordFields({ form, update, courses, resource }) {
           </select>
         </label>
       ) : null}
+      {isVideo ? <>
+        <label>
+          <span>Subject</span>
+          <select required value={form.subject || ''} onChange={(event) => update('subject', event.target.value)}>
+            <option value="">Select subject</option>
+            {subjects.map((subject) => <option key={subject._id || subject.subject || subject} value={subject._id || subject.subject || subject}>{subject.name || subject.subject?.name || 'Subject'}</option>)}
+          </select>
+        </label>
+        <label><span>Live date and time</span><input required min={new Date().toISOString().slice(0, 16)} type="datetime-local" value={form.scheduledAt || ''} onChange={(event) => update('scheduledAt', event.target.value)} /></label>
+      </> : null}
       <Field
         label={isAchievement ? 'Achievement description' : 'Description'}
         as="textarea"
@@ -887,7 +960,7 @@ function RecordFields({ form, update, courses, resource }) {
         </>
       ) : null}
       <Field
-        label={isAchievement ? 'Image URL (optional)' : 'Resource link / URL'}
+        label={isAchievement ? 'Image URL (optional)' : isVideo ? 'YouTube live link' : 'Resource link / URL'}
         value={form.resourceUrl}
         onChange={(value) => update('resourceUrl', value)}
         required={!isAchievement}
@@ -970,20 +1043,32 @@ function AchievementMediaPreview({ form }) {
     </div>
   );
 }
-function Field({ label, type = 'text', value, onChange, required = true, as = 'input' }) {
+function Field({
+  label,
+  type = 'text',
+  value,
+  onChange,
+  required = true,
+  as = 'input',
+  step,
+  placeholder = `Enter ${label.toLowerCase()}`,
+}) {
   return (
     <label>
       <span>{label}</span>
       {as === 'textarea' ? (
         <textarea
+          placeholder={placeholder}
           required={required}
           value={value || ''}
           onChange={(event) => onChange(event.target.value)}
         />
       ) : (
         <input
+          placeholder={placeholder}
           required={required}
           type={type}
+          step={step}
           value={value || ''}
           onChange={(event) => onChange(event.target.value)}
         />

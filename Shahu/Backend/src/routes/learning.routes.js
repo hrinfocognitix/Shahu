@@ -6,6 +6,7 @@ const { authorize } = require('../middleware/role.middleware');
 const { ROLES } = require('../constants/roles');
 const router = express.Router();
 router.get('/files/:id/download', controller.downloadLearningFile);
+router.get('/files/:id/preview', controller.previewLearningFile);
 router.use(authenticate);
 router.get('/syllabus', controller.listSyllabus);
 router.post(
@@ -29,6 +30,11 @@ router.post(
   authorize(ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.TEACHER),
   upload.single('file'),
   controller.createLearningFile
+);
+router.post(
+  '/files/import',
+  authorize(ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.TEACHER),
+  controller.importLearningFiles
 );
 router.patch(
   '/files/:id',
@@ -57,5 +63,7 @@ router.post(
   controller.confirmQuestions
 );
 router.get('/questions', controller.listQuestions);
+router.get('/mock-tests', controller.listMockTests);
+router.get('/mock-tests/:id/questions', controller.mockTestQuestions);
 router.post('/questions/submit', authorize(ROLES.STUDENT), controller.submitAnswers);
 module.exports = router;

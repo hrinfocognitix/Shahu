@@ -212,13 +212,17 @@ export function StudentWorkspace({ mode }) {
           <div className="student-learning-list">
             {items.map((item, index) => (
               <article className="card" key={item._id}>
-                <span>{index + 1}</span>
+                <span>{mode === 'tests' ? `${index + 1}/${items.length}` : index + 1}</span>
                 <div>
                   <h3>{item.chapter || item.title || item.questionText}</h3>
                   <p>{item.topic || item.description}</p>
+                  {mode === 'tests' && item.questionImage ? <img alt="Question" className="student-question-image" src={asset(item.questionImage)} /> : null}
                   {mode === 'tests' &&
-                    item.options?.map((option) => (
-                      <label className="student-test-option" key={option.key}>
+                    item.options?.map((option) => {
+                      const review = result?.answers?.find((answer) => String(answer.question) === String(item._id));
+                      const isSelected = answers[item._id] === option.key;
+                      const isCorrect = review?.correctOption === option.key;
+                      return <label className={`student-test-option ${result && isSelected ? (isCorrect ? 'is-correct' : 'is-wrong') : ''} ${result && isCorrect ? 'is-correct' : ''}`} key={option.key}>
                         <input
                           type="radio"
                           name={item._id}
@@ -229,8 +233,15 @@ export function StudentWorkspace({ mode }) {
                           }
                         />{' '}
                         {option.key}. {option.text}
-                      </label>
-                    ))}
+                        {item.optionImages?.[option.key] ? <img alt={`Option ${option.key}`} className="student-option-image" src={asset(item.optionImages[option.key])} /> : null}
+                      </label>;
+                    })}
+                  {mode === 'tests' && result ? (() => {
+                    const review = result.answers?.find((answer) => String(answer.question) === String(item._id));
+                    const selected = item.options?.find((option) => option.key === answers[item._id]);
+                    const correct = item.options?.find((option) => option.key === review?.correctOption);
+                    return review ? <section className={`student-answer-review ${review.correct ? 'correct' : 'wrong'}`}><b>{review.correct ? '✓ Correct Answer' : '✕ Wrong Answer'}</b><p><strong>Your Answer:</strong> {selected?.text || '—'}</p>{!review.correct ? <p><strong>Correct Answer:</strong> {correct?.text || '—'}</p> : null}<p><strong>Explanation:</strong> {review.explanation || 'No explanation provided.'}</p>{item.explanationImage ? <img alt="Explanation" className="student-question-image" src={asset(item.explanationImage)} /> : null}<div className="student-concept"><b>📘 Concept</b><span>{item.topic || item.chapter || 'Key concept'}</span><i>↓</i><span>{review.explanation || 'Review the explanation'}</span></div></section> : null;
+                  })() : null}
                 </div>
               {(item.downloadUrl || item.videoUrl || item.resourceUrl) && (
                 <a href={asset(item.downloadUrl || item.videoUrl || item.resourceUrl)} target="_blank" rel="noreferrer">

@@ -10,6 +10,7 @@ router.get('/active', controller.active);
 router.use(authenticate, authorize(ROLES.ADMIN, ROLES.SUPERADMIN));
 router.get('/', controller.list);
 router.post('/', upload.media.single('file'), controller.create);
+router.delete('/:id/permanent', controller.permanentlyRemove);
 router.patch('/:id', controller.update);
 router.delete('/:id', controller.remove);
 module.exports = router;

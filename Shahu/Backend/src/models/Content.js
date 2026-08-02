@@ -17,6 +17,7 @@ const contentSchema = new mongoose.Schema(
     thumbnail: String,
     imageUrl: String,
     videoUrl: String,
+    scheduledAt: Date,
     media: [{
       _id: false,
       url: { type: String, required: true },

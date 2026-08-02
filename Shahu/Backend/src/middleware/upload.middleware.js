@@ -27,6 +27,10 @@ function accepted(file, mediaOnly) {
   const video = videoTypes.has(file.mimetype) && videoExtensions.has(extension);
   if (image || video) return true;
   if (mediaOnly) return false;
+  // Some browsers report an XLSX upload as application/octet-stream. The
+  // question importer verifies the workbook itself, so accept the extension
+  // here instead of rejecting a valid Excel file before it reaches it.
+  if (['.xlsx', '.csv'].includes(extension)) return true;
   return documentTypeExtensions.get(file.mimetype)?.has(extension) || false;
 }
 

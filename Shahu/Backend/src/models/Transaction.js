@@ -39,6 +39,7 @@ const transactionSchema = new mongoose.Schema(
       discountAmountMinor: { type: Number, min: 0 },
     },
     paymentMethod: { type: String, required: true, trim: true },
+    submittedFrom: { type: String, enum: ['android', 'laptop'], default: 'android', index: true },
     gatewayReference: { type: String, trim: true, index: true },
     receiptNumber: { type: String, trim: true, index: true },
     receiptEmailedAt: Date,
