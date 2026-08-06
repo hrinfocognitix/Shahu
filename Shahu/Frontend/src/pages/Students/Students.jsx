@@ -323,6 +323,33 @@ export function Students() {
                 </button>
               </header>
               <section>
+                <h3>Personal information saved from Android</h3>
+                <div className="student-personal-grid">
+                  {[
+                    ['WhatsApp', details.student.profile?.whatsapp],
+                    ['Address', details.student.profile?.address],
+                    ['City', details.student.profile?.city],
+                    ['State', details.student.profile?.state],
+                    ['PIN code', details.student.profile?.pinCode],
+                    ['Gender', details.student.profile?.gender],
+                    ['Date of birth', date(details.student.profile?.dateOfBirth)],
+                    ['Age', details.student.profile?.age],
+                    ['Height', details.student.profile?.height ? `${details.student.profile.height} cm` : ''],
+                    ['Weight', details.student.profile?.weight ? `${details.student.profile.weight} kg` : ''],
+                    ['Education qualification', details.student.profile?.educationQualification],
+                    ['School / college', details.student.profile?.schoolCollege],
+                    ['Current class / course', details.student.profile?.currentClass],
+                    ["Father's name", details.student.profile?.fatherName],
+                    ["Mother's name", details.student.profile?.motherName],
+                  ].map(([label, value]) => (
+                    <div className="student-personal-field" key={label}>
+                      <small>{label}</small>
+                      <span>{value || '—'}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section>
                 <h3>
                   <FiSmartphone /> Registered devices
                 </h3>

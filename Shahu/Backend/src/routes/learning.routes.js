@@ -65,5 +65,6 @@ router.post(
 router.get('/questions', controller.listQuestions);
 router.get('/mock-tests', controller.listMockTests);
 router.get('/mock-tests/:id/questions', controller.mockTestQuestions);
+router.get('/mock-tests/:id/progress', controller.mockTestProgress);
 router.post('/questions/submit', authorize(ROLES.STUDENT), controller.submitAnswers);
 module.exports = router;

@@ -5,6 +5,7 @@ const { verifyAccessToken } = require('../helpers/jwt.helper');
 const userRepository = require('../repositories/user.repository');
 const Enrollment = require('../models/Enrollment');
 const { ROLES } = require('../constants/roles');
+const { mobileLoadControl } = require('./mobileLoadControl.middleware');
 
 const authenticate = asyncHandler(async (req, res, next) => {
   const header = req.headers.authorization || '';
@@ -44,7 +45,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
       STATUS_CODES.FORBIDDEN
     );
   }
-  next();
+  return mobileLoadControl(req, res, next);
 });
 
 module.exports = { authenticate };

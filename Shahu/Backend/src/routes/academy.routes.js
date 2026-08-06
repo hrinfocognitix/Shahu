@@ -651,7 +651,9 @@ module.exports = [
             },
           }),
       }),
-      { writeRoles: teacherRoles, permanentRemoveRoles: [ROLES.ADMIN, ROLES.SUPERADMIN] }
+      // Staff can archive notifications; only Super Admin can remove any
+      // record permanently.
+      { writeRoles: teacherRoles, permanentRemoveRoles: [ROLES.SUPERADMIN] }
     ),
   ],
   [
@@ -687,7 +689,8 @@ module.exports = [
         populate: 'createdBy',
         defaultFilter: { module: 'setting' },
         beforeCreate: (req) => ({ ...req.body, module: 'setting', createdBy: req.user._id }),
-      })
+      }),
+      { writeRoles: [ROLES.SUPERADMIN] }
     ),
   ],
   [

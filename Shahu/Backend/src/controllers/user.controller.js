@@ -15,7 +15,16 @@ const getProfile = asyncHandler(async (req, res) =>
 );
 
 const updateOwnProfile = asyncHandler(async (req, res) => {
-  const allowedFields = ['mobile', 'phone', 'whatsapp', 'address', 'city', 'state', 'pinCode', 'gender', 'dateOfBirth', 'age', 'height', 'weight', 'qualification', 'educationQualification', 'schoolCollege', 'currentClass', 'fatherName', 'motherName', 'biography'];
+  const allowedFields = ['mobile', 'phone', 'whatsapp', 'photo', 'address', 'city', 'state', 'pinCode', 'gender', 'dateOfBirth', 'age', 'height', 'weight', 'qualification', 'educationQualification', 'schoolCollege', 'currentClass', 'fatherName', 'motherName', 'biography'];
+  if (Object.prototype.hasOwnProperty.call(req.body.profile || {}, 'dateOfBirth')) {
+    const dateOfBirth = new Date(req.body.profile.dateOfBirth);
+    const oldestAllowedBirthDate = new Date();
+    oldestAllowedBirthDate.setHours(0, 0, 0, 0);
+    oldestAllowedBirthDate.setFullYear(oldestAllowedBirthDate.getFullYear() - 14);
+    if (Number.isNaN(dateOfBirth.getTime()) || dateOfBirth > oldestAllowedBirthDate) {
+      throw new AppError('Student must be at least 14 years old. Future dates are not allowed.', STATUS_CODES.BAD_REQUEST);
+    }
+  }
   const profile = Object.fromEntries(allowedFields.filter((key) => Object.prototype.hasOwnProperty.call(req.body.profile || {}, key)).map((key) => [key, req.body.profile[key]]));
   const user = await userService.updateUser(req.user._id, { name: String(req.body.name || req.user.name).trim(), profile, updatedBy: req.user._id });
   return apiResponse.success(res, { message: 'Profile updated', data: user });

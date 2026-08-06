@@ -5,6 +5,7 @@ export const ROUTES = {
   profile: '/profile',
   users: '/users',
   settings: '/settings',
+  mobileApiCapacity: '/mobile-api-capacity',
   reports: '/reports',
   notifications: '/notifications',
   courses: '/courses',

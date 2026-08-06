@@ -13,6 +13,7 @@ const auditLogRoutes = require('./auditLog.routes');
 const adminRoutes = require('./admin.routes');
 const paymentRoutes = require('./payment.routes');
 const adminPaymentRoutes = require('./adminPayment.routes');
+const resultsRoutes = require('./results.routes');
 
 const router = express.Router();
 
@@ -30,6 +31,7 @@ router.use('/splash-screens', splashScreenRoutes);
 router.use('/deleted-records', deletedRecordsRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/admin/payments', adminPaymentRoutes);
+router.use('/results', resultsRoutes);
 academyRoutes.forEach(([path, route]) => router.use(path, route));
 
 module.exports = router;

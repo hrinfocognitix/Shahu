@@ -73,6 +73,18 @@ const normalizeQuestion = (value) =>
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase();
+// Old uploads from browsers that sent UTF-8 filenames as Latin-1 can appear
+// as "à¤—...". Repair only that recognizable mojibake pattern for display.
+const readableFilename = (value) => {
+  const filename = String(value || '');
+  if (!/[àÃâ]/.test(filename)) return filename;
+  try {
+    const repaired = Buffer.from(filename, 'latin1').toString('utf8');
+    return repaired.includes('�') ? filename : repaired;
+  } catch {
+    return filename;
+  }
+};
 const wordCount = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).length;
 const shuffle = (items) => {
   const result = [...items];
@@ -285,6 +297,17 @@ const previewLearningFile = asyncHandler(async (req, res) => {
     throw new AppError('Preview link is invalid', STATUS_CODES.FORBIDDEN);
   }
 
+  // Helmet correctly blocks arbitrary pages from framing API responses. This
+  // one signed, time-limited endpoint is intentionally shown inside the
+  // academy portal preview modal, so allow only the configured portal origin.
+  res.removeHeader('X-Frame-Options');
+  // The URL contains a short-lived, signed token and is accessible only after
+  // enrollment verification.  It must be frameable by the academy web portal,
+  // including LAN/dev deployments whose browser origin differs from the API.
+  res.setHeader('Content-Security-Policy', "frame-ancestors *");
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
   const sourcePath = path.join(__dirname, '../uploads', path.basename(item.storedFilename));
   if (!OFFICE_MIME_TYPES.has(item.mimeType)) {
     if (!(item.mimeType === 'application/pdf' || item.mimeType.startsWith('image/') || item.mimeType.startsWith('text/'))) {
@@ -347,7 +370,7 @@ const createLearningFile = asyncHandler(async (req, res) => {
     category: ['syllabus-copy', 'notes', 'generated-questions', 'question-paper', 'mock-test', 'other'].includes(req.body.category)
       ? req.body.category
       : 'notes',
-    originalFilename: req.file.originalname,
+    originalFilename: readableFilename(req.file.originalname),
     storedFilename: req.file.filename,
     fileUrl: `/uploads/${req.file.filename}`,
     mimeType: req.file.mimetype,
@@ -679,7 +702,7 @@ const previewQuestions = asyncHandler(async (req, res) => {
   const item = await QuestionImport.create({
     course: req.body.course,
     subject: req.body.subject,
-    originalFilename: req.file.originalname,
+    originalFilename: readableFilename(req.file.originalname),
     storedFilename: req.file.filename,
     fileUrl: `/uploads/${req.file.filename}`,
     totalRows: rows.length,
@@ -842,7 +865,10 @@ const listMockTests = asyncHandler(async (req, res) => {
     .populate('subject', 'name subjectCode')
     .sort({ importedAt: -1, createdAt: -1 })
     .select('course subject originalFilename totalRows validRows importedAt createdAt');
-  return apiResponse.success(res, { message: 'Mock tests fetched', data: items });
+  return apiResponse.success(res, {
+    message: 'Mock tests fetched',
+    data: items.map((item) => ({ ...item.toObject(), originalFilename: readableFilename(item.originalFilename) })),
+  });
 });
 const mockTestQuestions = asyncHandler(async (req, res) => {
   const test = await QuestionImport.findById(req.params.id);
@@ -865,11 +891,30 @@ const mockTestQuestions = asyncHandler(async (req, res) => {
     meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
 });
+const mockTestProgress = asyncHandler(async (req, res) => {
+  const test = await QuestionImport.findById(req.params.id);
+  if (!test || test.status !== 'imported') throw new AppError('Mock test not found', 404);
+  await assertEnrollment(req, test.course);
+  const attempts = await QuestionAttempt.find({ student: req.user._id, mockTest: test._id, mockPage: { $exists: true } })
+    .select('mockPage score maximumScore submittedAt updatedAt')
+    .sort({ mockPage: 1 });
+  return apiResponse.success(res, {
+    message: 'Mock test progress fetched',
+    data: attempts.map((attempt) => ({
+      page: attempt.mockPage,
+      score: attempt.score,
+      maximumScore: attempt.maximumScore,
+      submittedAt: attempt.submittedAt,
+      updatedAt: attempt.updatedAt,
+    })),
+  });
+});
 const submitAnswers = asyncHandler(async (req, res) => {
   await assertEnrollment(req, req.body.course);
   const submittedAnswers = req.body.answers || [];
   if (!submittedAnswers.length) throw new AppError('At least one answer is required', 400);
   const isMockTestAttempt = Boolean(req.body.mockTest);
+  const mockPage = Math.max(1, Number.parseInt(req.body.mockPage, 10) || 0);
   if (isMockTestAttempt && submittedAnswers.length > 20) {
     throw new AppError('A mock-test page can contain a maximum of 20 answers', 400);
   }
@@ -883,6 +928,23 @@ const submitAnswers = asyncHandler(async (req, res) => {
     isDeleted: { $ne: true },
     ...(isMockTestAttempt ? { importBatch: req.body.mockTest, _id: { $in: ids } } : {}),
   };
+  if (isMockTestAttempt) {
+    if (!req.body.mockPage) throw new AppError('Mock-test page is required', 400);
+    const pageQuestions = await Question.find({
+      importBatch: req.body.mockTest,
+      course: req.body.course,
+      subject: req.body.subject,
+      status: 'published',
+      isDeleted: { $ne: true },
+    })
+      .select('_id')
+      .sort({ createdAt: 1, _id: 1 })
+      .skip((mockPage - 1) * 20)
+      .limit(20);
+    if (pageQuestions.length !== ids.length || pageQuestions.some((question) => !ids.includes(String(question._id)))) {
+      throw new AppError('Submit exactly one answer for each question on this mock-test page', 400);
+    }
+  }
   const questions = await Question.find(questionFilter).select('+correctOption +explanation');
   if (
     questions.length !== submittedAnswers.length ||
@@ -915,16 +977,24 @@ const submitAnswers = asyncHandler(async (req, res) => {
       explanation: question.explanation,
     };
   });
-  const attempt = await QuestionAttempt.create({
+  const attemptPayload = {
     student: req.user._id,
     course: req.body.course,
     subject: req.body.subject,
-    ...(isMockTestAttempt ? { mockTest: req.body.mockTest } : {}),
+    ...(isMockTestAttempt ? { mockTest: req.body.mockTest, mockPage } : {}),
     answers,
     score,
     maximumScore,
-  });
-  await AcademyRecord.create({
+    submittedAt: new Date(),
+  };
+  const attempt = isMockTestAttempt
+    ? await QuestionAttempt.findOneAndUpdate(
+        { student: req.user._id, mockTest: req.body.mockTest, mockPage },
+        { $set: attemptPayload },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      )
+    : await QuestionAttempt.create(attemptPayload);
+  const resultPayload = {
     module: 'result',
     title: 'Question bank attempt',
     description: `Score ${score} out of ${maximumScore}`,
@@ -935,8 +1005,21 @@ const submitAnswers = asyncHandler(async (req, res) => {
     maximumScore,
     status: maximumScore > 0 && score / maximumScore >= 0.4 ? 'passed' : 'failed',
     audience: 'students',
-    payload: { questionAttemptId: attempt._id, submittedAt: attempt.submittedAt },
-  });
+    payload: {
+      questionAttemptId: attempt._id,
+      submittedAt: attempt.submittedAt,
+      ...(isMockTestAttempt ? { mockTest: req.body.mockTest, mockPage } : {}),
+    },
+  };
+  if (isMockTestAttempt) {
+    await AcademyRecord.findOneAndUpdate(
+      { module: 'result', student: req.user._id, 'payload.mockTest': req.body.mockTest, 'payload.mockPage': mockPage },
+      { $set: resultPayload },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  } else {
+    await AcademyRecord.create(resultPayload);
+  }
   return apiResponse.success(res, {
     message: 'Answers submitted',
     data: { attemptId: attempt._id, score, maximumScore, answers },
@@ -961,5 +1044,6 @@ module.exports = {
   submitAnswers,
   listMockTests,
   mockTestQuestions,
+  mockTestProgress,
   _internals: { signDownload, verifyDownload, assertSubjectAccess, assertCourseSubject },
 };

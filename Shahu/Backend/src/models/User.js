@@ -44,7 +44,14 @@ const userSchema = new mongoose.Schema(
       city: String,
       state: String,
       pinCode: String,
-      gender: { type: String, enum: ['male', 'female', 'other'] },
+      // Gender is optional in the student profile. Normalize values entered
+      // from Android/web and keep an empty optional field valid for older
+      // student records during login.
+      gender: {
+        type: String,
+        enum: ['male', 'female', 'other', ''],
+        set: (value) => String(value || '').trim().toLowerCase(),
+      },
       dateOfBirth: Date,
       age: Number,
       height: Number,

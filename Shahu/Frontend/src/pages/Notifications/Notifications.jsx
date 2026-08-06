@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FiBell, FiSend, FiTrash2 } from 'react-icons/fi';
+import { useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
 import { apiClient } from '../../api/axios';
 import { Card } from '../../components/Card/Card';
@@ -7,6 +8,7 @@ import { Card } from '../../components/Card/Card';
 const emptyForm = { title: '', description: '', student: '' };
 
 export function Notifications() {
+  const user = useSelector((state) => state.auth.user);
   const [students, setStudents] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -45,7 +47,7 @@ export function Notifications() {
       setForm(emptyForm);
       await load();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Unable to send notification.');
+      toast.error(error.response?.data?.message || error.message || 'Unable to send notification.');
     } finally { setSending(false); }
   };
 
@@ -73,7 +75,7 @@ export function Notifications() {
         <div className="form-actions"><button type="submit" className="primary-button" disabled={sending}><FiSend /> {sending ? 'Sending…' : 'Send notification'}</button></div>
       </form>
     </Card>
-    <div className="section-heading notification-list-heading"><div><FiBell /><h2>Recent notifications</h2></div>{notifications.length ? <div className="notification-actions"><button type="button" className="secondary-button" onClick={selectAll}>{selectedIds.length === notifications.length ? 'Clear selection' : 'Select all'}</button><button type="button" className="danger-button" disabled={!selectedIds.length || deleting} onClick={removeSelected}><FiTrash2 /> {deleting ? 'Deleting…' : `Delete permanently (${selectedIds.length})`}</button></div> : null}</div>
-    <div className="record-list">{notifications.length ? notifications.map((item) => <Card key={item._id} className="record-row notification-row"><input type="checkbox" aria-label={`Select ${item.title}`} checked={selectedIds.includes(item._id)} onChange={() => toggleSelection(item._id)} /><div><strong>{item.title}</strong><p>{item.description || 'No message'}</p></div><small>{item.student?.name ? `Sent to ${item.student.name}` : 'Sent to all students'}</small></Card>) : <Card className="student-empty">No notifications sent yet.</Card>}</div>
+    <div className="section-heading notification-list-heading"><div><FiBell /><h2>Recent notifications</h2></div>{user?.role === 'superadmin' && notifications.length ? <div className="notification-actions"><button type="button" className="secondary-button" onClick={selectAll}>{selectedIds.length === notifications.length ? 'Clear selection' : 'Select all'}</button><button type="button" className="danger-button" disabled={!selectedIds.length || deleting} onClick={removeSelected}><FiTrash2 /> {deleting ? 'Deleting…' : `Delete permanently (${selectedIds.length})`}</button></div> : null}</div>
+    <div className="record-list">{notifications.length ? notifications.map((item) => <Card key={item._id} className="record-row notification-row">{user?.role === 'superadmin' ? <input type="checkbox" aria-label={`Select ${item.title}`} checked={selectedIds.includes(item._id)} onChange={() => toggleSelection(item._id)} /> : null}<div><strong>{item.title}</strong><p>{item.description || 'No message'}</p></div><small>{item.student?.name ? `Sent to ${item.student.name}` : 'Sent to all students'}</small></Card>) : <Card className="student-empty">No notifications sent yet.</Card>}</div>
   </section>;
 }

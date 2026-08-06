@@ -3,16 +3,20 @@ const { hashPassword } = require('../helpers/bcrypt.helper');
 const { ROLES } = require('../constants/roles');
 
 async function ensureDefaultAdmin() {
-  const superadminEmail = 'superadmin@cognitix.com';
+  // The academy Super Admin signs in with the .tech address.  Keep the
+  // historical .com account aligned too, so an old saved credential cannot
+  // accidentally receive a lower-privilege admin role.
+  const superadminEmails = ['superadmin@cognitix.tech', 'superadmin@cognitix.com'];
   const adminEmail = 'admin@cognitix.com';
   const defaultPassword = '12345678';
+  const superadminPassword = await hashPassword(defaultPassword);
 
-  await User.findOneAndUpdate(
-    { email: superadminEmail },
+  await Promise.all(superadminEmails.map((email) => User.findOneAndUpdate(
+    { email },
     {
       $set: {
         name: 'Cognitix Super Admin',
-        password: await hashPassword(defaultPassword),
+        password: superadminPassword,
         initialPassword: defaultPassword,
         role: ROLES.SUPERADMIN,
         isActive: true,
@@ -25,7 +29,7 @@ async function ensureDefaultAdmin() {
       upsert: true,
       setDefaultsOnInsert: true
     }
-  );
+  )));
 
   const admin = await User.findOne({ email: adminEmail }).select('_id +initialPassword');
   if (admin) {

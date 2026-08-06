@@ -7,6 +7,7 @@ const schema = new mongoose.Schema(
     // Each mobile mock-test page is recorded as its own attempt, allowing
     // staff to review page-level marks for a student.
     mockTest: { type: mongoose.Schema.Types.ObjectId, ref: 'QuestionImport', index: true },
+    mockPage: { type: Number, min: 1 },
     answers: [
       {
         question: { type: mongoose.Schema.Types.ObjectId, ref: 'Question', required: true },
@@ -22,4 +23,6 @@ const schema = new mongoose.Schema(
   { timestamps: true }
 );
 schema.index({ student: 1, subject: 1, submittedAt: -1 });
+// A retest replaces the result for the same page instead of creating another mark.
+schema.index({ student: 1, mockTest: 1, mockPage: 1 }, { unique: true, sparse: true });
 module.exports = mongoose.model('QuestionAttempt', schema);

@@ -58,6 +58,10 @@ async function login({ email, identifier, password }) {
   // Students may change a temporary password later from their profile. Clearing this
   // legacy flag after a successful password login prevents it from blocking the app.
   if (user.mustChangePassword) user.mustChangePassword = false;
+  if (user.profile && Object.prototype.hasOwnProperty.call(user.profile, 'gender')) {
+    const gender = String(user.profile.gender || '').trim().toLowerCase();
+    user.profile.gender = ['male', 'female', 'other'].includes(gender) ? gender : '';
+  }
   user.authVersion = Number(user.authVersion || 0) + 1;
   const tokens = issueTokens(user);
   user.refreshTokens = [tokens.refreshToken];
@@ -150,24 +154,24 @@ async function verifyStudentOtp({ email, otp }) {
 async function requestStudentPasswordReset({ email }) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const user = await authRepository.findUserByEmailWithSecrets(normalizedEmail);
-  if (!user || user.role !== ROLES.STUDENT || !user.isActive) {
-    return { eligible: false, message: 'You are not a registered student. Please purchase a course first.' };
+  if (!user || !user.isActive) {
+    return { eligible: false, message: 'If the email address is valid, a temporary password will be sent.' };
   }
-  const hasPurchasedCourse = await Enrollment.exists({ student: user._id });
+  const hasPurchasedCourse = user.role !== ROLES.STUDENT || await Enrollment.exists({ student: user._id });
   if (!hasPurchasedCourse) {
     return { eligible: false, message: 'You are not a registered student. Please purchase a course first.' };
   }
 
   const temporaryPassword = crypto.randomBytes(9).toString('base64url');
   user.password = await hashPassword(temporaryPassword);
-  user.mustChangePassword = false;
+  user.mustChangePassword = true;
   user.authVersion = Number(user.authVersion || 0) + 1;
   user.refreshTokens = [];
   await user.save();
 
   try {
     const delivery = await sendEmail({
-      to: user.email,
+      to: user.role === ROLES.SUPERADMIN ? env.superadminRecoveryEmail : user.email,
       subject: 'Your Lokaraja Career Academy temporary password',
       text: `Your new temporary password is ${temporaryPassword}. Sign in, then change it immediately.`,
       html: `<p>Your new temporary password is:</p><p style="font-size:20px;font-weight:700">${temporaryPassword}</p><p>Sign in, then change it immediately.</p>`,
@@ -176,7 +180,7 @@ async function requestStudentPasswordReset({ email }) {
   } catch {
     throw new AppError('Password was reset, but the email could not be sent. Please contact the academy.', STATUS_CODES.SERVICE_UNAVAILABLE);
   }
-  return { eligible: true, message: 'A new temporary password has been sent to your registered email address.' };
+  return { eligible: true, message: 'A new temporary password has been sent securely.' };
 }
 
 async function refresh(refreshToken) {

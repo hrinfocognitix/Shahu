@@ -31,6 +31,7 @@ router.post(
   authController.verifyStudentOtp
 );
 router.post('/student/forgot-password', authLimiter, validate(emailOtpRequestSchema), authController.requestStudentPasswordReset);
+router.post('/forgot-password', authLimiter, validate(emailOtpRequestSchema), authController.requestStudentPasswordReset);
 router.post('/refresh', validate(refreshSchema), authController.refresh);
 router.post('/logout', authenticate, validate(refreshSchema), authController.logout);
 

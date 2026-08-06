@@ -36,6 +36,7 @@ const links = [
   ['Notifications', ROUTES.notifications, FiBell],
   ['Reports', ROUTES.reports, FiFileText, ['admin', 'superadmin']],
   ['Splash Screen Upload', ROUTES.settings, FiImage, ['admin', 'superadmin']],
+  ['Mobile API Capacity', ROUTES.mobileApiCapacity, FiMonitor, 'superadmin'],
   ['Deleted Items', ROUTES.deletedRecords, FiTrash2, 'superadmin'],
 ];
 const studentLinks = [

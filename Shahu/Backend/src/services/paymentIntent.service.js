@@ -358,7 +358,7 @@ async function getPaymentStatus(paymentId, token) {
 
 async function listAdminPayments(status) {
   const filter = status ? { status: String(status).toUpperCase() } : {};
-  return PaymentIntent.find(filter).populate('course', 'name').populate('paymentAccount', 'title').populate('verifiedBy', 'name email').sort({ submittedAt: -1, createdAt: -1 }).lean();
+  return PaymentIntent.find(filter).populate('course', 'name durationDays').populate('paymentAccount', 'title').populate('enrollment', 'validFrom validUntil validityDays status').populate('verifiedBy', 'name email').sort({ submittedAt: -1, createdAt: -1 }).lean();
 }
 
 async function approvePayment(paymentId, admin, ip, options = {}) {

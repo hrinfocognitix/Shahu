@@ -10,4 +10,5 @@ export const authService = {
   logout: (refreshToken) =>
     apiClient.post(endpoints.auth.logout, { refreshToken }).then((res) => res.data),
   me: () => apiClient.get(endpoints.users.me).then((res) => res.data.data),
+  forgotPassword: (email) => apiClient.post('/auth/forgot-password', { email }).then((res) => res.data),
 };

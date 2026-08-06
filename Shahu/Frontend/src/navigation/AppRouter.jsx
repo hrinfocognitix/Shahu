@@ -1,9 +1,9 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from '../components/ProtectedRoute/ProtectedRoute';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { DashboardLayout } from '../layouts/DashboardLayout';
 import { Dashboard } from '../pages/Dashboard/Dashboard';
-import { Login } from '../pages/Login/Login';
+import { SuperAdminDashboard } from '../pages/SuperAdminDashboard/SuperAdminDashboard';
 import { NotFound } from '../pages/NotFound/NotFound';
 import { Notifications } from '../pages/Notifications/Notifications';
 import { Profile } from '../pages/Profile/Profile';
@@ -21,15 +21,23 @@ import { Learning } from '../pages/Learning/Learning';
 import { StudentWorkspace } from '../pages/StudentWorkspace/StudentWorkspace';
 import { AuditLogs } from '../pages/AuditLogs/AuditLogs';
 import { DeletedRecords } from '../pages/DeletedRecords/DeletedRecords';
+import { MobileApiCapacity } from '../pages/MobileApiCapacity/MobileApiCapacity';
+import { Results } from '../pages/Results/Results';
 import { Calendar } from '../pages/Calendar/Calendar';
 import { ROUTES } from '../config/routes';
+import { useSelector } from 'react-redux';
+
+function DashboardEntry() {
+  const user = useSelector((state) => state.auth.user);
+  return user?.role === 'superadmin' ? <SuperAdminDashboard /> : <Dashboard />;
+}
 
 export const router = createBrowserRouter([
   { path: ROUTES.home, element: <Home /> },
   { path: ROUTES.courseDetail, element: <CourseDetail /> },
   {
     element: <AuthLayout />,
-    children: [{ path: ROUTES.login, element: <Login /> }],
+    children: [{ path: ROUTES.login, element: <Navigate to={ROUTES.home} replace /> }],
   },
   {
     element: <ProtectedRoute />,
@@ -37,10 +45,11 @@ export const router = createBrowserRouter([
       {
         element: <DashboardLayout />,
         children: [
-          { path: ROUTES.dashboard, element: <Dashboard /> },
+          { path: ROUTES.dashboard, element: <DashboardEntry /> },
           { path: ROUTES.profile, element: <Profile /> },
           { path: ROUTES.users, element: <Users /> },
           { path: ROUTES.settings, element: <Settings /> },
+          { path: ROUTES.mobileApiCapacity, element: <MobileApiCapacity /> },
           { path: ROUTES.reports, element: <Reports /> },
           { path: ROUTES.notifications, element: <Notifications /> },
           { path: ROUTES.students, element: <Students /> },
@@ -67,7 +76,7 @@ export const router = createBrowserRouter([
           { path: ROUTES.videos, element: <Management resource="videos" /> },
           { path: ROUTES.assignments, element: <Management resource="assignments" /> },
           { path: ROUTES.exams, element: <Management resource="exams" /> },
-          { path: ROUTES.results, element: <Management resource="results" /> },
+          { path: ROUTES.results, element: <Results /> },
           { path: ROUTES.marks, element: <Management resource="marks" /> },
           { path: ROUTES.attendance, element: <Management resource="attendance" /> },
           { path: ROUTES.calendar, element: <Calendar /> },

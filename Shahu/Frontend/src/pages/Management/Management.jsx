@@ -116,12 +116,19 @@ const resolveAssetUrl = (path) => {
   if (!path.startsWith('http')) return `${assetBase}${path}`;
   return path.replace(/^https?:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2):5001/i, assetBase);
 };
+const validityLabel = (enrollment) => {
+  if (!enrollment?.validUntil) return '—';
+  const remaining = Math.max(0, Math.ceil((new Date(enrollment.validUntil).getTime() - Date.now()) / 86400000));
+  return `${remaining} remaining / ${Number(enrollment.validityDays || 0)} days`;
+};
 
 export function Management({ resource }) {
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [courses, setCourses] = useState([]);
   const [paymentAccounts, setPaymentAccounts] = useState([]);
+  const [accountPayments, setAccountPayments] = useState([]);
+  const [paymentFilters, setPaymentFilters] = useState({ account: '', status: '', from: '', to: '' });
   const [activeSubjects, setActiveSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -175,6 +182,31 @@ export function Management({ resource }) {
         )
         .catch(() => setPaymentAccounts([]));
   }, [isCourse]);
+  useEffect(() => {
+    if (!isAccount) { setAccountPayments([]); return; }
+    apiClient
+      .get('/admin/payments')
+      .then((response) => setAccountPayments(response.data.data || []))
+      .catch(() => setAccountPayments([]));
+  }, [isAccount]);
+
+  const filteredAccountPayments = useMemo(() => accountPayments.filter((payment) => {
+    const accountId = String(payment.paymentAccount?._id || payment.paymentAccount || '');
+    const paymentDate = new Date(payment.verifiedAt || payment.submittedAt || payment.createdAt || 0);
+    if (paymentFilters.account && accountId !== paymentFilters.account) return false;
+    if (paymentFilters.status && payment.status !== paymentFilters.status) return false;
+    if (paymentFilters.from && paymentDate < new Date(`${paymentFilters.from}T00:00:00`)) return false;
+    if (paymentFilters.to && paymentDate > new Date(`${paymentFilters.to}T23:59:59.999`)) return false;
+    return true;
+  }), [accountPayments, paymentFilters]);
+  const verifiedAccountPayments = useMemo(
+    () => filteredAccountPayments.filter((payment) => ['VERIFIED', 'PAID'].includes(payment.status)),
+    [filteredAccountPayments],
+  );
+  const totalAccountCollection = useMemo(
+    () => verifiedAccountPayments.reduce((total, payment) => total + Number(payment.amount || 0), 0),
+    [verifiedAccountPayments],
+  );
   useEffect(() => {
     if (isCourse)
       apiClient
@@ -469,6 +501,16 @@ export function Management({ resource }) {
             </span>
           ))}
         </div>
+      )}
+      {isAccount && (
+        <section className="payment-account-collection">
+          <div className="payment-account-total"><span>Paid collection</span><strong>₹{totalAccountCollection.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><small>{verifiedAccountPayments.length} paid / verified payment{verifiedAccountPayments.length === 1 ? '' : 's'} in the selected filter</small></div>
+          <div className="card payment-account-payment-list">
+            <h2>Payments received</h2>
+            <div className="payment-account-filters"><select value={paymentFilters.account} onChange={(event) => setPaymentFilters((current) => ({ ...current, account: event.target.value }))}><option value="">All payment accounts</option>{items.map((account) => <option key={account._id} value={account._id}>{account.title}</option>)}</select><select value={paymentFilters.status} onChange={(event) => setPaymentFilters((current) => ({ ...current, status: event.target.value }))}><option value="">All statuses</option>{[...new Set(accountPayments.map((payment) => payment.status).filter(Boolean))].sort().map((status) => <option key={status} value={status}>{status}</option>)}</select><label>From <input type="date" value={paymentFilters.from} onChange={(event) => setPaymentFilters((current) => ({ ...current, from: event.target.value }))} /></label><label>To <input type="date" value={paymentFilters.to} onChange={(event) => setPaymentFilters((current) => ({ ...current, to: event.target.value }))} /></label></div>
+            {filteredAccountPayments.length ? <div className="payment-account-table-wrap"><table><thead><tr><th>Date</th><th>Payment account</th><th>Student</th><th>Email</th><th>Mobile</th><th>Course</th><th>Validity</th><th>Amount</th><th>Status</th></tr></thead><tbody>{filteredAccountPayments.map((payment) => <tr key={payment._id}><td>{new Date(payment.verifiedAt || payment.submittedAt || payment.createdAt).toLocaleDateString('en-IN')}</td><td>{payment.paymentAccount?.title || 'Payment account'}</td><td>{payment.buyer?.name || '—'}</td><td>{payment.email || '—'}</td><td>{payment.buyer?.mobileNo || '—'}</td><td>{payment.course?.name || '—'}</td><td>{validityLabel(payment.enrollment)}</td><td>₹{Number(payment.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td><span className={`status-pill ${String(payment.status || '').toLowerCase()}`}>{payment.status || '—'}</span></td></tr>)}</tbody></table></div> : <p className="muted">No payments match the selected filters.</p>}
+          </div>
+        </section>
       )}
       <div className="card management-list">
         {loading ? (
