@@ -25,7 +25,7 @@ Local development uses `.env.local` and the local database:
 NODE_ENV=development
 HOST=0.0.0.0
 PORT=5001
-MONGO_URI=mongodb://127.0.0.1:27017/shahu?retryWrites=false
+MONGO_URI=mongodb://127.0.0.1:27017/shahuApp?retryWrites=false
 ```
 
 Production uses `.env.production`, supplied by the deployment platform's secret manager. Do not commit this file or the Atlas password:
@@ -34,7 +34,7 @@ Production uses `.env.production`, supplied by the deployment platform's secret 
 NODE_ENV=production
 HOST=0.0.0.0
 PORT=5000
-MONGO_URI=mongodb+srv://Rinanu-bandhPublications:<db_password>@cluster0.ntdrs1m.mongodb.net/shahu?retryWrites=true&w=majority&appName=Cluster0
+MONGO_URI=mongodb+srv://Rinanu-bandhPublications:<db_password>@cluster0.ntdrs1m.mongodb.net/shahuApp?retryWrites=true&w=majority&appName=Cluster0
 CLIENT_ORIGIN=https://your-public-frontend-domain
 ```
 

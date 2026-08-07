@@ -19,7 +19,7 @@ module.exports = {
   apiVersion: process.env.API_VERSION || 'v1',
   // The local development database is commonly a standalone MongoDB instance.
   // It cannot use retryable writes, so keep the safe fallback compatible too.
-  mongoUri: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/shahu?retryWrites=false',
+  mongoUri: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/shahuApp?retryWrites=false',
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET || 'local-access-secret',
