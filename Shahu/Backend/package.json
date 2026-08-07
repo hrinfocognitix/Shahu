@@ -8,8 +8,10 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
+    "start": "npm run start:local",
+    "start:local": "NODE_ENV=development node src/server.js",
+    "start:production": "NODE_ENV=production node src/server.js",
+    "dev": "NODE_ENV=development nodemon src/server.js",
     "seed:admin": "node src/scripts/seedAdmin.js",
     "migrate:learning-files:check": "node src/scripts/migrateLearningFiles.js",
     "migrate:learning-files:apply": "node src/scripts/migrateLearningFiles.js --apply",

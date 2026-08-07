@@ -15,6 +15,7 @@ if (process.env.NODE_ENV === 'production') {
 module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 5001,
+  host: process.env.HOST || '0.0.0.0',
   apiVersion: process.env.API_VERSION || 'v1',
   // The local development database is commonly a standalone MongoDB instance.
   // It cannot use retryable writes, so keep the safe fallback compatible too.

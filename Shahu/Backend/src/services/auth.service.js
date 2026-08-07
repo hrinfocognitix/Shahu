@@ -171,7 +171,9 @@ async function requestStudentPasswordReset({ email }) {
 
   try {
     const delivery = await sendEmail({
-      to: user.role === ROLES.SUPERADMIN ? env.superadminRecoveryEmail : user.email,
+      // Staff recovery is centrally controlled: Admin and Super Admin
+      // temporary passwords go only to the academy recovery mailbox.
+      to: [ROLES.ADMIN, ROLES.SUPERADMIN].includes(user.role) ? env.superadminRecoveryEmail : user.email,
       subject: 'Your Lokaraja Career Academy temporary password',
       text: `Your new temporary password is ${temporaryPassword}. Sign in, then change it immediately.`,
       html: `<p>Your new temporary password is:</p><p style="font-size:20px;font-weight:700">${temporaryPassword}</p><p>Sign in, then change it immediately.</p>`,

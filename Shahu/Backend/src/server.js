@@ -26,8 +26,10 @@ async function bootstrap() {
     process.exit(1);
   });
 
-  server.listen(env.port, () => {
-    logger.info(`API listening on port ${env.port}`);
+  // Bind IPv4 explicitly so phones on the local Wi-Fi can reach the API.
+  // Production hosting can override this with HOST when required.
+  server.listen(env.port, env.host, () => {
+    logger.info(`API listening on ${env.host}:${env.port}`);
   });
 
   process.on('SIGTERM', () => {

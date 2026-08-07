@@ -22,6 +22,7 @@ import founderLogo from '../../assets/lokaraja-founder.png';
 
 const links = [
   ['Dashboard', ROUTES.dashboard, FiGrid],
+  ['Profile & Password', ROUTES.profile, FiUser],
   ['Students', ROUTES.students, FiUsers, ['admin', 'superadmin']],
   ['Teachers', ROUTES.teachers, FiUsers, ['admin', 'superadmin']],
   ['Subjects', ROUTES.subjects, FiClipboard],
