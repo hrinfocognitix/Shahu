@@ -25,7 +25,7 @@ async function ensureDefaultAdmin() {
       }
     },
     {
-      new: true,
+      returnDocument: 'after',
       upsert: true,
       setDefaultsOnInsert: true
     }

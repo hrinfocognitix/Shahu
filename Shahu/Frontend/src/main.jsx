@@ -5,10 +5,12 @@ import { setupInterceptors } from './api/interceptors';
 import { App } from './App';
 import { store } from './redux/store/store';
 import { ThemeProvider } from './theme/ThemeProvider';
+import { setupRequestInteractionTracking } from './utils/requestInteraction';
 import './translations/i18n';
 import './styles/global.css';
 
 setupInterceptors();
+setupRequestInteractionTracking();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

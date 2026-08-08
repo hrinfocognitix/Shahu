@@ -36,6 +36,9 @@ const authSlice = createSlice({
     passwordChanged(state) {
       if (state.user) state.user.mustChangePassword = false;
     },
+    profileUpdated(state, action) {
+      if (state.user) state.user = { ...state.user, ...action.payload };
+    },
     logout() {
       return { user: null, accessToken: null, refreshToken: null, loading: false, error: null };
     },
@@ -48,6 +51,7 @@ export const {
   loginFailure,
   refreshTokenSuccess,
   passwordChanged,
+  profileUpdated,
   logout,
 } = authSlice.actions;
 export default authSlice.reducer;
