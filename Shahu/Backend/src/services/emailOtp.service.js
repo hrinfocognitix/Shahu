@@ -5,6 +5,7 @@ const env = require('../config/env');
 const AppError = require('../utils/appError');
 const { STATUS_CODES } = require('../constants/statusCodes');
 const { sendEmail } = require('./email.service');
+const logger = require('../config/logger');
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const COOLDOWN_MS = 60 * 1000;
@@ -14,6 +15,7 @@ const MAX_FAILED_ATTEMPTS = 5;
 const INVALID_OTP_MESSAGE = 'Invalid or expired verification code.';
 
 const normalizeEmail = email => String(email || '').trim().toLowerCase();
+const emailReference = email => crypto.createHash('sha256').update(normalizeEmail(email)).digest('hex').slice(0, 12);
 // HMAC keeps the one-way value server-secret scoped; plaintext OTPs are never persisted.
 const hashOtp = (email, otp) => crypto.createHmac('sha256', env.otp.hmacSecret).update(`email-verification:${email}:${otp}`).digest('hex');
 const generateOtp = () => String(crypto.randomInt(100000, 1000000));
@@ -27,13 +29,21 @@ const matchesOtp = (email, otp, hash) => secureEqual(hashOtp(email, otp), hash);
 
 async function requestEmailOtp(rawEmail) {
   const email = normalizeEmail(rawEmail);
+  const emailRef = emailReference(email);
+  logger.info('Email OTP requested', { emailRef });
   const now = new Date();
   const existing = await EmailVerificationOtp.findOne({ email }).select('+otpHash');
   const windowExpired = !existing || !existing.requestWindowStartedAt || now - existing.requestWindowStartedAt >= REQUEST_WINDOW_MS;
 
   // Same generic result for throttled requests prevents account enumeration.
-  if (existing && !windowExpired && existing.lastSentAt && now - existing.lastSentAt < COOLDOWN_MS) return { delivered: false, throttled: true };
-  if (existing && !windowExpired && existing.requestCount >= MAX_REQUESTS_PER_EMAIL) return { delivered: false, throttled: true };
+  if (existing && !windowExpired && existing.lastSentAt && now - existing.lastSentAt < COOLDOWN_MS) {
+    logger.warn('Email OTP request throttled', { emailRef, reason: 'cooldown' });
+    return { delivered: false, throttled: true };
+  }
+  if (existing && !windowExpired && existing.requestCount >= MAX_REQUESTS_PER_EMAIL) {
+    logger.warn('Email OTP request throttled', { emailRef, reason: 'request_limit' });
+    return { delivered: false, throttled: true };
+  }
 
   const otp = generateOtp();
   const expiresAt = new Date(now.getTime() + OTP_TTL_MS);
@@ -53,6 +63,7 @@ async function requestEmailOtp(rawEmail) {
     },
     { upsert: true, returnDocument: 'after', runValidators: true, setDefaultsOnInsert: true }
   );
+  logger.info('Email OTP record saved', { emailRef, expiresAt, requestCount });
 
   const delivery = await sendEmail({
     to: email,
@@ -61,6 +72,7 @@ async function requestEmailOtp(rawEmail) {
     html: `<p>Your verification code is <strong style="font-size:24px;letter-spacing:4px">${otp}</strong>.</p><p>This code expires in 10 minutes. If you did not request this code, you can ignore this email.</p>`,
   });
   if (delivery?.skipped) throw new AppError('Email delivery is not configured.', STATUS_CODES.SERVICE_UNAVAILABLE);
+  logger.info('Email OTP sent', { emailRef, expiresAt });
   return { delivered: true, expiresAt };
 }
 

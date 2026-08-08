@@ -36,11 +36,15 @@ const requestCourseOtp = asyncHandler(async (req, res) => {
   if (!course || course.status === 'inactive') throw new AppError('This course is unavailable', STATUS_CODES.NOT_FOUND);
   const normalizedEmail = String(email).trim().toLowerCase();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  const emailRef = crypto.createHash('sha256').update(normalizedEmail).digest('hex').slice(0, 12);
 
   const code = String(crypto.randomInt(100000, 1000000));
+  logger.info('Course enrollment OTP requested', { requestId: req.requestId, courseId: String(course._id), emailRef });
   await CoursePurchaseOtp.findOneAndUpdate({ course: course._id, email: normalizedEmail }, { name: String(name).trim(), mobileNo: String(mobileNo).trim(), email: normalizedEmail, age: String(age).trim(), education: String(education).trim(), address: String(address).trim(), codeHash: hashCourseOtp(course._id, code), expiresAt, attempts: 0, verifiedAt: null }, { upsert: true, returnDocument: 'after', runValidators: true });
+  logger.info('Course enrollment OTP record saved', { requestId: req.requestId, courseId: String(course._id), emailRef, expiresAt });
   const delivery = await sendEmail({ to: normalizedEmail, subject: `Your ${course.name} enrollment OTP`, text: `Your enrollment OTP is ${code}. It expires in 10 minutes.`, html: `<p>Your enrollment OTP for <strong>${course.name}</strong> is:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It expires in 10 minutes.</p>` });
   if (delivery?.skipped) throw new AppError('Email OTP delivery is not configured', STATUS_CODES.SERVICE_UNAVAILABLE);
+  logger.info('Course enrollment OTP sent', { requestId: req.requestId, courseId: String(course._id), emailRef, expiresAt });
   return apiResponse.success(res, { message: 'OTP sent to your email', data: { expiresAt } });
 });
 

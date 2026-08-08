@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const logger = require('../config/logger');
 
 const secretKey = /password|token|otp|secret|authorization|cookie|signature|refresh/i;
+const personalKey = /email|mobile|phone|address|name|age|education|whatsapp|father|mother|guardian/i;
 
 const requestPath = (req) => String(req.originalUrl || req.url || '').split('?')[0];
 
@@ -13,7 +14,7 @@ const safeValue = (value, depth = 0) => {
   if (Array.isArray(value)) return value.map((item) => safeValue(item, depth + 1));
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [
     key,
-    secretKey.test(key) ? '[redacted]' : safeValue(item, depth + 1),
+    secretKey.test(key) ? '[redacted]' : personalKey.test(key) ? '[present]' : safeValue(item, depth + 1),
   ]));
 };
 
