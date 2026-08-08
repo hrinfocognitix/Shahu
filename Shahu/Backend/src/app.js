@@ -19,7 +19,10 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(
   cors({
-    origin: env.clientOrigin,
+    origin(origin, callback) {
+      if (env.isAllowedClientOrigin(origin)) return callback(null, true);
+      return callback(new Error('Origin is not allowed by CORS'));
+    },
     credentials: true
   })
 );

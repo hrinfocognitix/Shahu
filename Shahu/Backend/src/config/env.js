@@ -12,6 +12,27 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+const clientOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+const vercelProjectSlug = process.env.VERCEL_PROJECT_SLUG || 'shahuacademy';
+
+function isAllowedClientOrigin(origin) {
+  if (!origin || clientOrigins.includes(origin)) return true;
+
+  // Vercel generates a unique URL for each preview deployment. Limit that
+  // convenience to this project's deployment URLs, rather than all Vercel apps.
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'https:' &&
+      url.hostname.endsWith('.vercel.app') &&
+      url.hostname.startsWith(`${vercelProjectSlug}-`);
+  } catch {
+    return false;
+  }
+}
+
 module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 5001,
@@ -20,7 +41,9 @@ module.exports = {
   // The local development database is commonly a standalone MongoDB instance.
   // It cannot use retryable writes, so keep the safe fallback compatible too.
   mongoUri: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/shahuApp?retryWrites=false',
-  clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  clientOrigin: clientOrigins[0],
+  clientOrigins,
+  isAllowedClientOrigin,
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET || 'local-access-secret',
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'local-refresh-secret',
