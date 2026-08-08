@@ -1,9 +1,10 @@
 const path = require('path');
 const multer = require('multer');
+const { uploadDir } = require('../config/storage');
 
 const storage = multer.diskStorage({
   destination(req, file, cb) {
-    cb(null, path.join(__dirname, '../uploads'));
+    cb(null, uploadDir);
   },
   filename(req, file, cb) {
     const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '-');

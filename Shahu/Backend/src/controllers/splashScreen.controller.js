@@ -5,6 +5,7 @@ const AppError = require('../utils/appError');
 const { STATUS_CODES } = require('../constants/statusCodes');
 const fs = require('fs/promises');
 const path = require('path');
+const { uploadDir } = require('../config/storage');
 const { sendNotificationPush } = require('../services/notification.service');
 
 const discardUpload = (req) => req.file?.path ? fs.unlink(req.file.path).catch(() => undefined) : Promise.resolve();
@@ -90,7 +91,7 @@ const permanentlyRemove = asyncHandler(async (req, res) => {
   const mediaUrls = [...new Set([item.imageUrl, item.videoUrl].filter(Boolean))];
   await Promise.all(mediaUrls.map(async (url) => {
     if (!String(url).startsWith('/uploads/')) return;
-    await fs.unlink(path.join(__dirname, '../uploads', path.basename(url))).catch(() => undefined);
+    await fs.unlink(path.join(uploadDir, path.basename(url))).catch(() => undefined);
   }));
   return apiResponse.success(res, { message: 'Splash screen permanently deleted' });
 });

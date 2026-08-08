@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs/promises');
+const { uploadDir } = require('../config/storage');
 const connectDatabase = require('../config/db');
 const Content = require('../models/Content');
 const LearningFile = require('../models/LearningFile');
@@ -21,7 +22,7 @@ async function run() {
     const storedFilename = path.basename(url);
     let fileSize = 0;
     try {
-      fileSize = (await fs.stat(path.join(__dirname, '../uploads', storedFilename))).size;
+      fileSize = (await fs.stat(path.join(uploadDir, storedFilename))).size;
     } catch {
       fileSize = 0;
     }

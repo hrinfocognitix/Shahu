@@ -393,7 +393,10 @@ export function Learning() {
     data.append('file', mockTestFile);
     setMockTestLoading(true);
     try {
-      const response = await apiClient.post('/learning/questions/preview', data);
+      // A large workbook (for example 50,000 questions) needs time for
+      // server-side parsing, validation and preview-row storage. Keep the
+      // normal API timeout for other actions, but do not abort this upload.
+      const response = await apiClient.post('/learning/questions/preview', data, { timeout: 10 * 60 * 1000 });
       setMockTestPreview(response.data.data);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Unable to validate mock-test file');
@@ -402,7 +405,7 @@ export function Learning() {
 
   const importMockTest = async () => {
     try {
-      const response = await apiClient.post(`/learning/questions/import/${mockTestPreview._id}`);
+      const response = await apiClient.post(`/learning/questions/import/${mockTestPreview._id}`, null, { timeout: 10 * 60 * 1000 });
       toast.success(response.data.message || 'Mock test questions imported');
       setMockTestFile(null);
       setMockTestPreview(null);

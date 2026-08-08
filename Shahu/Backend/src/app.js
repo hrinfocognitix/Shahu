@@ -1,7 +1,6 @@
 const compression = require('compression');
 const cors = require('cors');
 const express = require('express');
-const path = require('path');
 const helmet = require('helmet');
 const swaggerUi = require('swagger-ui-express');
 const env = require('./config/env');
@@ -12,6 +11,7 @@ const routes = require('./routes');
 const authRoutes = require('./routes/auth.routes');
 const paymentController = require('./controllers/payment.controller');
 const { errorHandler, notFound } = require('./middleware/error.middleware');
+const { uploadDir } = require('./config/storage');
 
 const app = express();
 
@@ -54,7 +54,7 @@ app.use(
     res.setHeader('Access-Control-Allow-Origin', '*');
     next();
   },
-  express.static(path.join(__dirname, 'uploads'))
+  express.static(uploadDir)
 );
 app.use(apiLimiter);
 

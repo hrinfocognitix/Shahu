@@ -23,6 +23,7 @@ const { execFile: executeFile } = require('child_process');
 const { promisify } = require('util');
 const env = require('../config/env');
 const logger = require('../config/logger');
+const { uploadDir } = require('../config/storage');
 
 const execFile = promisify(executeFile);
 const OFFICE_MIME_TYPES = new Set([
@@ -242,6 +243,24 @@ const listLearningFiles = asyncHandler(async (req, res) => {
   });
   return apiResponse.success(res, { message: 'Learning files fetched', data });
 });
+
+const storedLearningFilePath = async (item, req) => {
+  const filename = path.basename(item.storedFilename);
+  const sourcePath = path.join(uploadDir, filename);
+  try {
+    await fs.access(sourcePath);
+    return sourcePath;
+  } catch {
+    logger.error('Learning file is missing from configured upload storage', {
+      requestId: req.requestId,
+      learningFileId: String(item._id),
+      storedFilename: filename,
+      uploadDir,
+    });
+    throw new AppError('This uploaded file is no longer available. Please ask an administrator to upload it again.', STATUS_CODES.NOT_FOUND);
+  }
+};
+
 const downloadLearningFile = asyncHandler(async (req, res) => {
   let decoded;
   try {
@@ -271,16 +290,16 @@ const downloadLearningFile = asyncHandler(async (req, res) => {
   } else if (![ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.TEACHER].includes(decoded.role)) {
     throw new AppError('Download link is invalid', STATUS_CODES.FORBIDDEN);
   }
-  const safeFilename = path.basename(item.storedFilename);
+  const sourcePath = await storedLearningFilePath(item, req);
   // The mobile app deliberately requests inline content for its private
   // in-app preview cache.  Do not force Android to hand the material to an
   // external downloader/application in that case.
   if (req.query.inline === '1') {
     res.type(item.mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(item.originalFilename)}"`);
-    return res.sendFile(path.join(__dirname, '../uploads', safeFilename));
+    return res.sendFile(sourcePath);
   }
-  return res.download(path.join(__dirname, '../uploads', safeFilename), item.originalFilename);
+  return res.download(sourcePath, item.originalFilename);
 });
 
 const previewLearningFile = asyncHandler(async (req, res) => {
@@ -309,7 +328,7 @@ const previewLearningFile = asyncHandler(async (req, res) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  const sourcePath = path.join(__dirname, '../uploads', path.basename(item.storedFilename));
+  const sourcePath = await storedLearningFilePath(item, req);
   if (!OFFICE_MIME_TYPES.has(item.mimeType)) {
     if (!(item.mimeType === 'application/pdf' || item.mimeType.startsWith('image/') || item.mimeType.startsWith('text/'))) {
       throw new AppError('This file type cannot be previewed in the app', 415);
