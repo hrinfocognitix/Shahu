@@ -37,10 +37,23 @@ function accepted(file, mediaOnly) {
 const createUpload = (mediaOnly = false) => multer({
   storage,
   fileFilter(req, file, cb) {
+    // Multer rejects unsupported files before the controller runs. Preserve
+    // only non-sensitive metadata so the request-completion log can explain
+    // why an upload (especially a mock-test spreadsheet) was refused.
+    req.uploadAttempt = {
+      field: file.fieldname,
+      name: file.originalname,
+      extension: path.extname(file.originalname || '').toLowerCase(),
+      mimeType: file.mimetype,
+      mediaOnly,
+    };
     if (!accepted(file, mediaOnly)) {
+      const isLegacyExcel = path.extname(file.originalname || '').toLowerCase() === '.xls';
       return cb(new Error(mediaOnly
         ? 'Select a supported image or MP4, WebM, MOV, or M4V video'
-        : 'Select an image, supported video, PDF, DOC, DOCX, or XLSX file'));
+        : isLegacyExcel
+          ? 'The older .xls Excel format is not supported. Open it in Excel or Numbers and save/export it as .xlsx or .csv, then upload again.'
+          : 'Select an image, supported video, PDF, DOC, DOCX, or XLSX file'));
     }
     return cb(null, true);
   },

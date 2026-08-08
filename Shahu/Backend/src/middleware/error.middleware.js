@@ -22,6 +22,9 @@ function errorHandler(error, req, res, next) {
     path: req.originalUrl,
     method: req.method,
     userId: req.user?._id?.toString(),
+    uploadAttempt: req.uploadAttempt,
+    contentType: req.get('content-type'),
+    contentLength: req.get('content-length'),
   });
 
   return apiResponse.error(res, {

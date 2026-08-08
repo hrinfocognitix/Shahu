@@ -110,7 +110,6 @@ export function Subjects() {
   const previewMockTest = async (event) => {
     event.preventDefault();
     if (!mockTest.course || !mockTest.file) return toast.error('Choose a course and an Excel or CSV file');
-    if (!/\.(xlsx|csv)$/i.test(mockTest.file.name)) return toast.error('Upload .xlsx or .csv. In Numbers, use File → Export To → Excel or CSV first.');
     const data = new FormData();
     data.append('course', mockTest.course);
     data.append('subject', mockTestSubject._id);

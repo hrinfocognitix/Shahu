@@ -22,6 +22,7 @@ const os = require('os');
 const { execFile: executeFile } = require('child_process');
 const { promisify } = require('util');
 const env = require('../config/env');
+const logger = require('../config/logger');
 
 const execFile = promisify(executeFile);
 const OFFICE_MIME_TYPES = new Set([
@@ -559,8 +560,21 @@ const questionTemplate = asyncHandler(async (req, res) => {
 });
 const previewQuestions = asyncHandler(async (req, res) => {
   const extension = path.extname(req.file?.originalname || '').toLowerCase();
-  if (!req.file || !['.xlsx', '.csv'].includes(extension))
+  const uploadMeta = {
+    requestId: req.requestId,
+    fileName: req.file?.originalname,
+    extension,
+    fileSize: req.file?.size,
+    mimeType: req.file?.mimetype,
+    courseId: req.body.course,
+    subjectId: req.body.subject,
+    userId: req.user?._id?.toString(),
+  };
+  logger.info('Mock-test spreadsheet validation started', uploadMeta);
+  if (!req.file || !['.xlsx', '.csv'].includes(extension)) {
+    logger.warn('Mock-test spreadsheet validation rejected', { ...uploadMeta, reason: 'unsupported_extension' });
     throw new AppError('Upload an .xlsx or .csv file. For a Mac Numbers file, use File → Export To → Excel or CSV first.', 400);
+  }
   await assertSubjectAccess(req, req.body.subject);
   await assertCourseSubject(req.body.course, req.body.subject);
   const selectedCourse = await Course.findById(req.body.course).select('subjects').lean();
@@ -586,17 +600,28 @@ const previewQuestions = asyncHandler(async (req, res) => {
         // Fall back to the CSV reader before declaring the upload unreadable.
         const csvWorkbook = new ExcelJS.Workbook();
         await csvWorkbook.csv.readFile(req.file.path);
-        if (!csvWorkbook.worksheets[0]?.rowCount) throw xlsxError;
+        if (!csvWorkbook.worksheets[0]?.rowCount) {
+          logger.warn('Mock-test XLSX parsing failed and CSV fallback was empty', { ...uploadMeta, parseError: xlsxError.message });
+          throw xlsxError;
+        }
+        logger.warn('Mock-test file used CSV fallback despite XLSX extension', uploadMeta);
         workbook = csvWorkbook;
       }
     }
-  } catch {
+  } catch (error) {
+    logger.warn('Mock-test spreadsheet could not be read', { ...uploadMeta, parseError: error.message });
     throw new AppError('This file is not a readable .xlsx or .csv file. Download the template, or export your Numbers sheet to Excel/CSV, and try again.', 400);
   }
   const sheet = workbook.worksheets[0];
-  if (!sheet) throw new AppError('The workbook is empty', 400);
-  if (sheet.rowCount - 1 > MAX_QUESTION_IMPORT_ROWS)
+  if (!sheet) {
+    logger.warn('Mock-test spreadsheet validation rejected', { ...uploadMeta, reason: 'empty_workbook' });
+    throw new AppError('The workbook is empty', 400);
+  }
+  if (sheet.rowCount - 1 > MAX_QUESTION_IMPORT_ROWS) {
+    logger.warn('Mock-test spreadsheet validation rejected', { ...uploadMeta, reason: 'row_limit_exceeded', rowCount: sheet.rowCount - 1, maximumRows: MAX_QUESTION_IMPORT_ROWS });
     throw new AppError(`A maximum of ${MAX_QUESTION_IMPORT_ROWS.toLocaleString()} question rows is allowed per upload`, 400);
+  }
+  logger.info('Mock-test spreadsheet parsed', { ...uploadMeta, worksheetName: sheet.name, sourceRows: Math.max(0, sheet.rowCount - 1) });
   const headers = {};
   sheet.getRow(1).eachCell((cell, col) => {
     headers[String(cell.text).trim().toLowerCase()] = col;
@@ -732,15 +757,31 @@ const previewQuestions = asyncHandler(async (req, res) => {
   } catch (error) {
     await QuestionImportRow.deleteMany({ importBatch: item._id });
     await QuestionImport.deleteOne({ _id: item._id });
+    logger.error('Mock-test preview rows could not be saved', { ...uploadMeta, importId: String(item._id), error: error.message });
     throw error;
   }
+  logger.info('Mock-test spreadsheet validation completed', {
+    ...uploadMeta,
+    importId: String(item._id),
+    totalRows: rows.length,
+    validRows,
+    invalidRows: rows.length - validRows - duplicateRows,
+    duplicateRows,
+  });
   return apiResponse.success(res, { message: 'Question file previewed', data: item });
 });
 const confirmQuestions = asyncHandler(async (req, res) => {
+  logger.info('Mock-test import started', { requestId: req.requestId, importId: req.params.id, userId: req.user?._id?.toString() });
   const batch = await QuestionImport.findById(req.params.id);
-  if (!batch) throw new AppError('Question import not found', 404);
+  if (!batch) {
+    logger.warn('Mock-test import rejected', { requestId: req.requestId, importId: req.params.id, reason: 'import_not_found' });
+    throw new AppError('Question import not found', 404);
+  }
   await assertSubjectAccess(req, batch.subject);
-  if (batch.status !== 'previewed') throw new AppError('Question import is already processed', 409);
+  if (batch.status !== 'previewed') {
+    logger.warn('Mock-test import rejected', { requestId: req.requestId, importId: String(batch._id), reason: 'already_processed', status: batch.status });
+    throw new AppError('Question import is already processed', 409);
+  }
   const toQuestion = (row) => {
     const d = row.data;
     return {
@@ -776,7 +817,10 @@ const confirmQuestions = asyncHandler(async (req, res) => {
   const hasValidRows = batch.hasExternalRows
     ? await QuestionImportRow.exists({ importBatch: batch._id, valid: true })
     : inlineValidRows.length > 0;
-  if (!hasValidRows) throw new AppError('There are no valid rows to import', 400);
+  if (!hasValidRows) {
+    logger.warn('Mock-test import rejected', { requestId: req.requestId, importId: String(batch._id), reason: 'no_valid_rows' });
+    throw new AppError('There are no valid rows to import', 400);
+  }
   let imported = 0;
   const subjectIds = new Set();
   const saveQuestions = async (rowsToSave) => {
@@ -836,6 +880,7 @@ const confirmQuestions = asyncHandler(async (req, res) => {
       questionCount: imported,
     },
   });
+  logger.info('Mock-test import completed', { requestId: req.requestId, importId: String(batch._id), imported, rejected: batch.invalidRows, userId: req.user?._id?.toString() });
   return apiResponse.success(res, {
     message: `${imported} questions imported`,
     data: { imported, rejected: batch.invalidRows },

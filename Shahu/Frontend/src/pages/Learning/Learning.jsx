@@ -387,7 +387,6 @@ export function Learning() {
   const previewMockTest = async (event) => {
     event.preventDefault();
     if (!mockTestFile) return toast.error('Choose an Excel (.xlsx) or CSV file');
-    if (!/\.(xlsx|csv)$/i.test(mockTestFile.name)) return toast.error('Choose an .xlsx or .csv file');
     const data = new FormData();
     data.append('course', course);
     data.append('subject', subject);

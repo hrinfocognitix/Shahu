@@ -27,17 +27,18 @@ app.use(
   })
 );
 app.use(compression());
-// Must be registered before express.json(): Razorpay signs the exact unparsed request bytes.
-app.post('/api/webhooks/razorpay', express.raw({ type: 'application/json' }), paymentController.razorpayWebhook);
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true }));
 // Render and other hosting providers probe the service root during deployment.
-// Keep this lightweight endpoint outside the versioned API and request logger
-// so a successful platform probe does not look like an application error.
 app.get('/', (req, res) => res.status(200).json({
   success: true,
   message: 'Shahu Academy API is running',
 }));
+// Register logging before all API parsers/routes so every submit operation,
+// including raw payment webhooks, has one request ID and a final outcome log.
+app.use(requestLogger);
+// Must be registered before express.json(): Razorpay signs the exact unparsed request bytes.
+app.post('/api/webhooks/razorpay', express.raw({ type: 'application/json' }), paymentController.razorpayWebhook);
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
 app.use(
   '/uploads',
   (req, res, next) => {
@@ -55,7 +56,6 @@ app.use(
   },
   express.static(path.join(__dirname, 'uploads'))
 );
-app.use(requestLogger);
 app.use(apiLimiter);
 
 app.use(`/api/${env.apiVersion}`, routes);

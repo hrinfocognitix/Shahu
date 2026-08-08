@@ -21,8 +21,24 @@ const safeValue = (value, depth = 0) => {
 const actionDetails = (req) => ({
   body: Object.keys(req.body || {}).length ? safeValue(req.body) : undefined,
   query: Object.keys(req.query || {}).length ? safeValue(req.query) : undefined,
+  params: Object.keys(req.params || {}).length ? safeValue(req.params) : undefined,
   files: req.file ? { field: req.file.fieldname, name: req.file.originalname, size: req.file.size } : undefined,
+  uploadedFiles: Array.isArray(req.files)
+    ? req.files.map((file) => ({ field: file.fieldname, name: file.originalname, size: file.size }))
+    : undefined,
+  uploadAttempt: req.uploadAttempt,
 });
+
+const isSubmission = (method) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+
+const responseSummary = (payload) => {
+  if (!payload || typeof payload !== 'object') return undefined;
+  return {
+    success: typeof payload.success === 'boolean' ? payload.success : undefined,
+    message: typeof payload.message === 'string' ? payload.message : undefined,
+    code: typeof payload.code === 'string' ? payload.code : undefined,
+  };
+};
 
 function requestLogger(req, res, next) {
   const startedAt = process.hrtime.bigint();
@@ -30,9 +46,21 @@ function requestLogger(req, res, next) {
   req.requestId = String(requestId);
   res.setHeader('X-Request-Id', req.requestId);
 
-  logger.info('API action started', {
+  // Keep a small, safe summary of API responses so a Render log can show the
+  // exact user-facing result without recording returned student data.
+  let responseBody;
+  const originalJson = res.json.bind(res);
+  res.json = (payload) => {
+    responseBody = responseSummary(payload);
+    return originalJson(payload);
+  };
+
+  const eventName = isSubmission(req.method) ? 'API submission started' : 'API action started';
+
+  logger.info(eventName, {
     requestId: req.requestId,
     action: `${req.method} ${requestPath(req)}`,
+    submission: isSubmission(req.method),
     ipAddress: req.ip,
     ...actionDetails(req),
   });
@@ -48,10 +76,18 @@ function requestLogger(req, res, next) {
       userId: req.user?._id?.toString(),
       role: req.user?.role,
       userAgent: req.get('user-agent'),
+      submission: isSubmission(req.method),
+      response: responseBody,
       ...actionDetails(req),
     };
     const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
-    logger.log(level, res.statusCode >= 400 ? 'API action failed' : 'API action completed', meta);
+    logger.log(
+      level,
+      res.statusCode >= 400
+        ? (isSubmission(req.method) ? 'API submission failed' : 'API action failed')
+        : (isSubmission(req.method) ? 'API submission successful' : 'API action completed'),
+      meta
+    );
   });
   next();
 }
