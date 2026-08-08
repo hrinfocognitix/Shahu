@@ -27,7 +27,10 @@ function isAllowedClientOrigin(origin) {
     const url = new URL(origin);
     return url.protocol === 'https:' &&
       url.hostname.endsWith('.vercel.app') &&
-      url.hostname.startsWith(`${vercelProjectSlug}-`);
+      // Allow both the production Vercel hostname (project.vercel.app) and
+      // preview deployments (project-<hash>.vercel.app).
+      (url.hostname === `${vercelProjectSlug}.vercel.app` ||
+        url.hostname.startsWith(`${vercelProjectSlug}-`));
   } catch {
     return false;
   }
