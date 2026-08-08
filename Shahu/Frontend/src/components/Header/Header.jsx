@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 const expiresAt = token => {
   try { return JSON.parse(atob(token.split('.')[1])).exp * 1000; } catch { return 0; }
 };
+const MAX_FRONTEND_SESSION_MS = 30 * 60 * 1000;
 
 export function Header() {
   const dispatch = useDispatch();
@@ -25,7 +26,9 @@ export function Header() {
   const handleLogout = async () => { try { await authService.logout(refreshToken); } catch {} finally { endSession(); } };
 
   useEffect(() => {
-    const remaining = expiresAt(accessToken) - Date.now();
+    // Never keep a portal session longer than 30 minutes, even if a future
+    // backend configuration issues a longer access token.
+    const remaining = Math.min(expiresAt(accessToken) - Date.now(), MAX_FRONTEND_SESSION_MS);
     if (remaining <= 0) { endSession(); return undefined; }
     const timeout = window.setTimeout(endSession, remaining);
     return () => window.clearTimeout(timeout);

@@ -5,6 +5,7 @@ const { STATUS_CODES } = require('../constants/statusCodes');
 const AppInstallation = require('../models/AppInstallation');
 const logger = require('../config/logger');
 const crypto = require('crypto');
+const { sendNotificationPush } = require('../services/notification.service');
 
 const clean = (value, max = 512) => String(value || '').trim().slice(0, max);
 const fingerprint = (value) => crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 12);
@@ -52,6 +53,22 @@ const linkStudent = asyncHandler(async (req, res) => {
     installationRef: fingerprint(uuid),
     studentId: String(req.user._id),
   });
+  // The mobile client sets welcome=true only for an interactive login, not a
+  // background session refresh. Send after linking so the new device token is
+  // included in the recipient lookup.
+  if (req.body?.welcome === true && req.user.role === 'student') {
+    const studentName = String(req.user.name || '').trim();
+    void sendNotificationPush({
+      title: 'Welcome to Shahu Academy',
+      body: studentName ? `Welcome back, ${studentName}! Your learning dashboard is ready.` : 'Welcome back! Your learning dashboard is ready.',
+      student: req.user._id,
+      data: { type: 'login_welcome' },
+    }).then((result) => {
+      logger.info('Student login welcome notification queued', { requestId: req.requestId, studentId: String(req.user._id), ...result });
+    }).catch((error) => {
+      logger.error('Student login welcome notification failed', { requestId: req.requestId, studentId: String(req.user._id), error: error.message });
+    });
+  }
   return apiResponse.success(res, { message: 'Installation linked to student' });
 });
 

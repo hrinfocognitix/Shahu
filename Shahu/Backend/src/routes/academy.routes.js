@@ -40,7 +40,7 @@ const studentNotificationFilter = async (request) => {
       { student: request.user._id },
       {
         student: null,
-        audience: { $in: ['all', 'students'] },
+        audience: { $in: ['all', 'students', 'course'] },
         $or: [{ course: null }, { course: { $in: enrollments } }],
       },
     ],
@@ -49,7 +49,7 @@ const studentNotificationFilter = async (request) => {
 const canReadNotification = async (request, item) => {
   if (request.user.role !== ROLES.STUDENT) return true;
   if (String(item.student?._id || item.student || '') === String(request.user._id)) return true;
-  if (item.student || !['all', 'students'].includes(item.audience)) return false;
+  if (item.student || !['all', 'students', 'course'].includes(item.audience)) return false;
   if (!item.course) return true;
   return Boolean(
     await Enrollment.exists({
@@ -640,16 +640,26 @@ module.exports = [
         canRead: canReadNotification,
         beforeCreate: (req) => ({ ...req.body, module: 'notification', createdBy: req.user._id }),
         afterCreate: async (notification, req) => {
+          const courseRecipients = notification.audience === 'course' && notification.course
+            ? await Enrollment.find({
+              course: notification.course,
+              status: 'active',
+              validFrom: { $lte: new Date() },
+              validUntil: { $gte: new Date() },
+            }).distinct('student')
+            : undefined;
           logger.info('Admin notification created; push delivery queued', {
             requestId: req.requestId,
             notificationId: String(notification._id),
             audience: notification.student ? 'student' : notification.audience || 'all',
             targetStudentId: notification.student ? String(notification.student) : undefined,
+            courseRecipientCount: courseRecipients?.length,
           });
           return sendNotificationPush({
             title: notification.title,
             body: notification.description,
             student: notification.student,
+            students: courseRecipients,
             data: {
               type: 'academy_notification',
               notificationId: notification._id,
