@@ -29,7 +29,10 @@ async function sendNotificationPush({ title, body, student, students, data = {} 
   if (student) filter.student = student;
   if (Array.isArray(students)) filter.student = { $in: students };
   const tokens = await AppInstallation.find(filter).distinct('fcmToken');
-  if (!tokens.length) return { sent: 0 };
+  if (!tokens.length) {
+    logger.warn('Push notification skipped because no enabled device tokens matched', { student: student ? String(student) : undefined, students: Array.isArray(students) ? students.length : undefined });
+    return { sent: 0 };
+  }
 
   const admin = getFirebaseAdmin();
   if (!admin) return { sent: 0, skipped: true };
@@ -39,12 +42,16 @@ async function sendNotificationPush({ title, body, student, students, data = {} 
     android: { priority: 'high' },
   };
   let sent = 0;
+  const failures = [];
   for (let start = 0; start < tokens.length; start += 500) {
     const result = await admin.messaging().sendEachForMulticast({ ...payload, tokens: tokens.slice(start, start + 500) });
     sent += result.successCount;
+    result.responses.forEach((response, index) => {
+      if (!response.success) failures.push({ code: response.error?.code, tokenIndex: start + index });
+    });
   }
-  logger.info(`Push notification sent to ${sent}/${tokens.length} devices`);
-  return { sent, total: tokens.length };
+  logger.info('Push notification delivery finished', { sent, total: tokens.length, failed: failures.length, failures: failures.slice(0, 10) });
+  return { sent, total: tokens.length, failed: failures.length };
 }
 
 module.exports = { sendPush, sendNewCoursePush, sendNotificationPush };

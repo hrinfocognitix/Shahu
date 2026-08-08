@@ -22,7 +22,16 @@ export function Notifications() {
         apiClient.get('/students', { params: { limit: 500, status: 'active' } }),
         apiClient.get('/notifications', { params: { limit: 50 } }),
       ]);
-      setStudents(studentResponse.data.data || []);
+      // Only students are valid notification recipients. De-duplicate in case
+      // an old record or paginated response contains the same account twice.
+      const uniqueStudents = Array.from(
+        new Map(
+          (studentResponse.data.data || [])
+            .filter((student) => student?.role === 'student')
+            .map((student) => [student._id, student])
+        ).values()
+      );
+      setStudents(uniqueStudents);
       setNotifications(notificationResponse.data.data || []);
       setSelectedIds([]);
     } catch {
