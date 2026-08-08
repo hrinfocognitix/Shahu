@@ -12,10 +12,12 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-const clientOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
+const defaultClientOrigins = ['http://localhost:5173', 'https://shahuacademy.vercel.app'];
+const configuredClientOrigins = (process.env.CLIENT_ORIGIN || '')
   .split(',')
   .map(origin => origin.trim())
   .filter(Boolean);
+const clientOrigins = [...new Set([...defaultClientOrigins, ...configuredClientOrigins])];
 const vercelProjectSlug = process.env.VERCEL_PROJECT_SLUG || 'shahuacademy';
 
 function isAllowedClientOrigin(origin) {

@@ -1,6 +1,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const apiResponse = require('../utils/apiResponse');
 const resourceService = require('../services/resource.service');
+const logger = require('../config/logger');
 
 function resourceController(
   Model,
@@ -42,7 +43,14 @@ function resourceController(
       // Side effects (for example FCM) must never make a successfully-created
       // resource fail for the administrator.
       if (afterCreate) {
-        Promise.resolve(afterCreate(item, req)).catch(() => {});
+        Promise.resolve(afterCreate(item, req)).catch((error) => {
+          logger.error('Resource create side effect failed', {
+            requestId: req.requestId,
+            resource: Model.modelName,
+            recordId: String(item._id),
+            message: error.message,
+          });
+        });
       }
       return apiResponse.success(res, {
         statusCode: 201,

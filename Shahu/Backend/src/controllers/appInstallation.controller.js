@@ -3,8 +3,11 @@ const apiResponse = require('../utils/apiResponse');
 const AppError = require('../utils/appError');
 const { STATUS_CODES } = require('../constants/statusCodes');
 const AppInstallation = require('../models/AppInstallation');
+const logger = require('../config/logger');
+const crypto = require('crypto');
 
 const clean = (value, max = 512) => String(value || '').trim().slice(0, max);
+const fingerprint = (value) => crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 12);
 
 const register = asyncHandler(async (req, res) => {
   const uuid = clean(req.body?.uuid, 128);
@@ -19,11 +22,20 @@ const register = asyncHandler(async (req, res) => {
   const fcmToken = clean(req.body?.fcmToken, 4096);
   if (fcmToken) update.fcmToken = fcmToken;
 
-  await AppInstallation.findOneAndUpdate(
+  const installation = await AppInstallation.findOneAndUpdate(
     { uuid },
     { $set: update, $setOnInsert: { uuid, firstSeenAt: new Date() } },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
+  logger.info('Android notification installation registered', {
+    requestId: req.requestId,
+    installationRef: fingerprint(uuid),
+    fcmTokenRef: fcmToken ? fingerprint(fcmToken) : undefined,
+    notificationsEnabled: update.notificationsEnabled,
+    platform: update.platform,
+    appVersion: update.appVersion,
+    linkedStudent: Boolean(installation.student),
+  });
   return apiResponse.success(res, { statusCode: 201, message: 'App installation registered' });
 });
 
@@ -35,6 +47,11 @@ const linkStudent = asyncHandler(async (req, res) => {
     { $set: { student: req.user._id, lastSeenAt: new Date() } },
     { upsert: true, setDefaultsOnInsert: true }
   );
+  logger.info('Android notification installation linked to student', {
+    requestId: req.requestId,
+    installationRef: fingerprint(uuid),
+    studentId: String(req.user._id),
+  });
   return apiResponse.success(res, { message: 'Installation linked to student' });
 });
 

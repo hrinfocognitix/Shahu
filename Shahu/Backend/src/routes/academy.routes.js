@@ -22,6 +22,7 @@ const { authenticate } = require('../middleware/auth.middleware');
 const { authorize } = require('../middleware/role.middleware');
 const { isCompleteUpiId, normalizeUpiId } = require('../services/paymentIntent.service');
 const { sendNewCoursePush, sendNotificationPush } = require('../services/notification.service');
+const logger = require('../config/logger');
 
 const teacherRoles = [ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.TEACHER];
 const courseWriteRoles = [ROLES.ADMIN, ROLES.SUPERADMIN];
@@ -638,8 +639,14 @@ module.exports = [
         beforeList: studentNotificationFilter,
         canRead: canReadNotification,
         beforeCreate: (req) => ({ ...req.body, module: 'notification', createdBy: req.user._id }),
-        afterCreate: (notification) =>
-          sendNotificationPush({
+        afterCreate: async (notification, req) => {
+          logger.info('Admin notification created; push delivery queued', {
+            requestId: req.requestId,
+            notificationId: String(notification._id),
+            audience: notification.student ? 'student' : notification.audience || 'all',
+            targetStudentId: notification.student ? String(notification.student) : undefined,
+          });
+          return sendNotificationPush({
             title: notification.title,
             body: notification.description,
             student: notification.student,
@@ -649,7 +656,8 @@ module.exports = [
               courseId: notification.course || '',
               deepLink: notification.course ? `shahu://course/${notification.course}` : '',
             },
-          }),
+          });
+        },
       }),
       // Staff can archive notifications; only Super Admin can remove any
       // record permanently.
