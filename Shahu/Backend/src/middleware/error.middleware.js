@@ -15,7 +15,14 @@ function errorHandler(error, req, res, next) {
   }
   const statusCode = error.statusCode || 500;
   const isProduction = process.env.NODE_ENV === 'production';
-  logger.error(error.message, { stack: error.stack, path: req.originalUrl });
+  logger.error('API action error', {
+    requestId: req.requestId,
+    message: error.message,
+    stack: error.stack,
+    path: req.originalUrl,
+    method: req.method,
+    userId: req.user?._id?.toString(),
+  });
 
   return apiResponse.error(res, {
     statusCode,
