@@ -50,12 +50,10 @@ module.exports = {
     accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '25m',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d'
   },
-  smtp: {
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 587,
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-    from: process.env.SMTP_FROM || process.env.SMTP_USER
+  email: {
+    brevoApiKey: process.env.BREVO_API_KEY,
+    from: process.env.EMAIL_FROM,
+    fromName: process.env.EMAIL_FROM_NAME || 'Shahu Academy',
   },
   otp: { hmacSecret: process.env.OTP_HMAC_SECRET || process.env.JWT_ACCESS_SECRET || 'development-only-otp-secret' },
   superadminRecoveryEmail: process.env.SUPERADMIN_RECOVERY_EMAIL || 'hrinfocognitix@gmail.com',

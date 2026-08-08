@@ -1,55 +1,71 @@
-const nodemailer = require('nodemailer');
 const env = require('../config/env');
 const logger = require('../config/logger');
 const AppError = require('../utils/appError');
 const { STATUS_CODES } = require('../constants/statusCodes');
 
-function createTransporter() {
-  return nodemailer.createTransport({
-    host: env.smtp.host,
-    port: env.smtp.port,
-    secure: env.smtp.port === 465,
-    auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.pass } : undefined,
-    // A blocked SMTP connection must fail before the mobile request timeout.
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 15_000,
-  });
-}
+const BREVO_EMAIL_URL = 'https://api.brevo.com/v3/smtp/email';
+const EMAIL_TIMEOUT_MS = 15_000;
+
+const toBrevoAttachments = (attachments = []) => attachments.map((attachment) => ({
+  name: attachment.filename || attachment.name || 'attachment',
+  content: Buffer.isBuffer(attachment.content)
+    ? attachment.content.toString('base64')
+    : String(attachment.content || ''),
+}));
 
 async function sendEmail({ to, subject, html, text, attachments }) {
-  if (!env.smtp.host || !env.smtp.user || !env.smtp.pass) {
-    logger.error('Email delivery is not configured', {
-      smtpHostConfigured: Boolean(env.smtp.host),
-      smtpUserConfigured: Boolean(env.smtp.user),
-      smtpPasswordConfigured: Boolean(env.smtp.pass),
+  if (!env.email.brevoApiKey || !env.email.from) {
+    logger.error('Brevo email delivery is not configured', {
+      brevoApiKeyConfigured: Boolean(env.email.brevoApiKey),
+      emailFromConfigured: Boolean(env.email.from),
     });
-    return { skipped: true, reason: 'SMTP is not configured' };
+    return { skipped: true, reason: 'Brevo email delivery is not configured' };
   }
+
   const recipientDomain = String(to || '').split('@')[1] || 'unknown';
-  logger.info('Email delivery started', { recipientDomain, subject, smtpHost: env.smtp.host });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), EMAIL_TIMEOUT_MS);
+  logger.info('Brevo email delivery started', { recipientDomain, subject });
+
   try {
-    const result = await createTransporter().sendMail({
-      from: env.smtp.from,
-      to,
-      subject,
-      html,
-      text,
-      attachments,
+    const response = await fetch(BREVO_EMAIL_URL, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'api-key': env.email.brevoApiKey,
+      },
+      body: JSON.stringify({
+        sender: { email: env.email.from, name: env.email.fromName },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+        textContent: text,
+        ...(attachments?.length ? { attachment: toBrevoAttachments(attachments) } : {}),
+      }),
+      signal: controller.signal,
     });
-    logger.info('Email delivery completed', { recipientDomain, subject, messageId: result.messageId });
-    return result;
+    const responseBody = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(`Brevo returned HTTP ${response.status}`);
+      error.status = response.status;
+      error.code = responseBody.code;
+      throw error;
+    }
+    logger.info('Brevo email delivery completed', { recipientDomain, subject, messageId: responseBody.messageId });
+    return { messageId: responseBody.messageId };
   } catch (error) {
-    logger.error('Email delivery failed', {
+    logger.error('Brevo email delivery failed', {
       recipientDomain,
       subject,
-      smtpHost: env.smtp.host,
+      status: error.status,
       code: error.code,
-      command: error.command,
-      responseCode: error.responseCode,
+      timedOut: error.name === 'AbortError',
       message: error.message,
     });
-    throw new AppError('Unable to send the OTP email right now. Please wait a moment and try again.', STATUS_CODES.SERVICE_UNAVAILABLE);
+    throw new AppError('Unable to send the email right now. Please wait a moment and try again.', STATUS_CODES.SERVICE_UNAVAILABLE);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
