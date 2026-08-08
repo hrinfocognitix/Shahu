@@ -589,6 +589,7 @@ const previewQuestions = asyncHandler(async (req, res) => {
     subjectId: req.body.subject,
     userId: req.user?._id?.toString(),
   };
+  console.log('[MockTest] spreadsheet validation received', uploadMeta);
   logger.info('Mock-test spreadsheet validation started', uploadMeta);
   if (!req.file || !['.xlsx', '.csv'].includes(extension)) {
     logger.warn('Mock-test spreadsheet validation rejected', { ...uploadMeta, reason: 'unsupported_extension' });
@@ -827,9 +828,11 @@ const previewQuestions = asyncHandler(async (req, res) => {
     invalidRows: rows.length - validRows - duplicateRows,
     duplicateRows,
   });
+  console.log('[MockTest] spreadsheet validation completed', { requestId: req.requestId, importId: String(item._id), totalRows: rows.length, validRows, invalidRows: rows.length - validRows - duplicateRows, duplicateRows });
   return apiResponse.success(res, { message: 'Question file previewed', data: item });
 });
 const confirmQuestions = asyncHandler(async (req, res) => {
+  console.log('[MockTest] import request received', { requestId: req.requestId, importId: req.params.id, userId: req.user?._id?.toString() });
   logger.info('Mock-test import started', { requestId: req.requestId, importId: req.params.id, userId: req.user?._id?.toString() });
   const batch = await QuestionImport.findById(req.params.id);
   if (!batch) {
@@ -887,6 +890,8 @@ const confirmQuestions = asyncHandler(async (req, res) => {
     questions.forEach((question) => subjectIds.add(String(question.subject)));
     await Question.insertMany(questions, { ordered: true });
     imported += questions.length;
+    console.log('[MockTest] question import batch saved', { requestId: req.requestId, importId: String(batch._id), batchRows: questions.length, imported });
+    logger.info('Mock-test import batch saved', { requestId: req.requestId, importId: String(batch._id), batchRows: questions.length, imported });
   };
   if (batch.hasExternalRows) {
     let rowsToSave = [];
@@ -940,6 +945,7 @@ const confirmQuestions = asyncHandler(async (req, res) => {
     },
   });
   logger.info('Mock-test import completed', { requestId: req.requestId, importId: String(batch._id), imported, rejected: batch.invalidRows, userId: req.user?._id?.toString() });
+  console.log('[MockTest] import completed', { requestId: req.requestId, importId: String(batch._id), imported, rejected: batch.invalidRows });
   return apiResponse.success(res, {
     message: `${imported} questions imported`,
     data: { imported, rejected: batch.invalidRows },

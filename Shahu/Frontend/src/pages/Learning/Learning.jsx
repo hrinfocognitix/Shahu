@@ -407,7 +407,7 @@ export function Learning() {
     if (!mockTestPreview || mockTestLoading) return;
     setMockTestLoading(true);
     try {
-      const response = await apiClient.post(`/learning/questions/import/${mockTestPreview._id}`, null, { timeout: 10 * 60 * 1000 });
+      const response = await apiClient.post(`/learning/questions/import/${mockTestPreview._id}`, {}, { timeout: 10 * 60 * 1000 });
       toast.success(response.data.message || 'Mock test questions imported');
       setMockTestFile(null);
       setMockTestPreview(null);

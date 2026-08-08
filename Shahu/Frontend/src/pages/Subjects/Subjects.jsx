@@ -126,7 +126,7 @@ export function Subjects() {
   };
   const importMockTest = async () => {
     try {
-      const response = await apiClient.post(`/learning/questions/import/${mockTest.preview._id}`, null, { timeout: 10 * 60 * 1000 });
+      const response = await apiClient.post(`/learning/questions/import/${mockTest.preview._id}`, {}, { timeout: 10 * 60 * 1000 });
       toast.success(response.data.message || 'Mock test imported');
       setMockTestSubject(null);
     } catch (error) { toast.error(error.response?.data?.message || 'Unable to import mock test'); }
