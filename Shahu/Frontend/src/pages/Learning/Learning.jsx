@@ -404,12 +404,18 @@ export function Learning() {
   };
 
   const importMockTest = async () => {
+    if (!mockTestPreview || mockTestLoading) return;
+    setMockTestLoading(true);
     try {
       const response = await apiClient.post(`/learning/questions/import/${mockTestPreview._id}`, null, { timeout: 10 * 60 * 1000 });
       toast.success(response.data.message || 'Mock test questions imported');
       setMockTestFile(null);
       setMockTestPreview(null);
-    } catch (error) { toast.error(error.response?.data?.message || 'Unable to import mock test'); }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to import mock test');
+    } finally {
+      setMockTestLoading(false);
+    }
   };
 
   const editItem = async (item) => {
@@ -630,7 +636,8 @@ export function Learning() {
                 <p>Upload .xlsx or .csv questions. The Subject column is used to assign each question to a subject in this course.</p>
                 <input key={mockTestPreview ? 'imported' : 'choose'} onChange={(event) => { setMockTestFile(event.target.files?.[0] || null); setMockTestPreview(null); }} type="file" />
                 <small>{mockTestFile?.name || 'Choose the Excel file from your Mac.'}</small>
-                {!mockTestPreview ? <button className="btn btn-primary" disabled={mockTestLoading}>{mockTestLoading ? 'Validating…' : 'Validate Mock Test'}</button> : <div className="mock-test-preview"><b>{mockTestPreview.validRows} valid · {mockTestPreview.invalidRows} rejected</b>{mockTestPreview.invalidRows ? <ul>{mockTestPreview.rows.filter((row) => !row.valid).slice(0, 5).map((row) => <li key={row.rowNumber}>Row {row.rowNumber}: {row.validationErrors.join(', ')}</li>)}</ul> : null}<button className="btn btn-primary" onClick={importMockTest} type="button">Import valid questions</button></div>}
+                {mockTestLoading ? <small>Large workbooks can take several minutes. Please keep this page open.</small> : null}
+                {!mockTestPreview ? <button className="btn btn-primary" disabled={mockTestLoading}>{mockTestLoading ? 'Validating…' : 'Validate Mock Test'}</button> : <div className="mock-test-preview"><b>{mockTestPreview.validRows} valid · {mockTestPreview.invalidRows} rejected</b>{mockTestPreview.invalidRows ? <ul>{mockTestPreview.rows.filter((row) => !row.valid).slice(0, 5).map((row) => <li key={row.rowNumber}>Row {row.rowNumber}: {row.validationErrors.join(', ')}</li>)}</ul> : null}<button className="btn btn-primary" disabled={mockTestLoading} onClick={importMockTest} type="button">{mockTestLoading ? 'Importing questions…' : 'Import valid questions'}</button></div>}
               </form>
             ) : null}
             {documentTypes.map((type) => {

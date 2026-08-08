@@ -608,50 +608,90 @@ const previewQuestions = asyncHandler(async (req, res) => {
   const subjectIdsByName = new Map(
     courseSubjects.map((subject) => [normalizeQuestion(subject.name), String(subject._id)])
   );
-  let workbook = new ExcelJS.Workbook();
+  const headers = {};
+  const rows = [];
+  const seen = new Set();
+  let worksheetName;
+  let sourceRows = 0;
+  const consumeRow = (row, number) => {
+    const get = (...names) => {
+      const column = names.map((name) => headers[name.toLowerCase()]).find(Boolean);
+      return column ? row.getCell(column).text.trim() : '';
+    };
+    const data = {
+      sheetSubject: get('subject'), questionText: get('question', 'प्रश्न'),
+      optionA: get('option1', 'option a', 'पर्याय अ'), optionB: get('option2', 'option b', 'पर्याय ब'),
+      optionC: get('option3', 'option c', 'पर्याय क'), optionD: get('option4', 'option d', 'पर्याय ड'),
+      correctAnswer: get('correctanswer', 'correct option', 'योग्य उत्तर'), explanation: get('justification', 'explanation', 'स्पष्टीकरण'),
+      marks: Number(get('marks') || 1), negativeMarks: Number(get('negativemarks', 'negative marks') || 0),
+      difficulty: (get('difficulty') || 'medium').toLowerCase(), chapter: get('chapter', 'प्रकरण'), topic: get('topic', 'प्रकरण'),
+      questionType: get('questiontype') || 'MCQ', questionImage: get('questionimage'), option1Image: get('option1image'),
+      option2Image: get('option2image'), option3Image: get('option3image'), option4Image: get('option4image'),
+      explanationImage: get('explanationimage'), status: (get('status') || 'published').toLowerCase(),
+    };
+    const answer = data.correctAnswer.trim();
+    const marathiOptionKeys = { 'अ': 'A', 'ब': 'B', 'क': 'C', 'ड': 'D' };
+    if (marathiOptionKeys[answer]) data.correctOption = marathiOptionKeys[answer];
+    else if (/^[a-d]$/i.test(answer)) data.correctOption = answer.toUpperCase();
+    else if (/^option\s*[1-4]$/i.test(answer)) data.correctOption = String.fromCharCode(64 + Number(answer.match(/[1-4]/)[0]));
+    else data.correctOption = ['A', 'B', 'C', 'D'].find((key) => data[`option${key}`] === answer) || ({ 'पर्याय अ': 'A', 'पर्याय ब': 'B', 'पर्याय क': 'C', 'पर्याय ड': 'D' }[answer]) || '';
+    data.subject = data.sheetSubject ? subjectIdsByName.get(normalizeQuestion(data.sheetSubject)) : String(req.body.subject);
+    if (!data.questionText && !data.optionA && !data.optionB) return;
+    const errors = [];
+    const normalized = normalizeQuestion(data.questionText);
+    if (!data.questionText) errors.push('Question is required');
+    if (!data.subject) errors.push(`Subject "${data.sheetSubject}" is not assigned to the selected course`);
+    if (!data.optionA || !data.optionB) errors.push('Option A and Option B are required');
+    if (!['A', 'B', 'C', 'D'].includes(data.correctOption) || !data[`option${data.correctOption}`]) errors.push('Correct Option must match an available option');
+    if (!Number.isFinite(data.marks) || data.marks < 0) errors.push('Marks must be non-negative');
+    if (!Number.isFinite(data.negativeMarks) || data.negativeMarks < 0) errors.push('Negative Marks must be non-negative');
+    if (wordCount(data.explanation) > 50) errors.push('Justification must be 50 words or fewer');
+    if (!['easy', 'medium', 'hard'].includes(data.difficulty)) errors.push('Difficulty must be easy, medium, or hard');
+    if (!['published', 'draft', 'archived'].includes(data.status)) errors.push('Status must be published, draft, or archived');
+    const duplicateKey = `${String(data.subject)}:${normalized}`;
+    const duplicateInUpload = seen.has(duplicateKey);
+    seen.add(duplicateKey);
+    rows.push({ rowNumber: number, data: { ...data, normalizedText: normalized }, valid: !errors.length && !duplicateInUpload, skipped: duplicateInUpload, validationErrors: errors });
+  };
+  logger.info('Mock-test spreadsheet source-file reading started', uploadMeta);
   try {
-    if (extension === '.csv') await workbook.csv.readFile(req.file.path);
-    else {
-      try {
-        await workbook.xlsx.readFile(req.file.path);
-      } catch (xlsxError) {
-        // macOS applications occasionally save CSV text with an .xlsx suffix.
-        // Fall back to the CSV reader before declaring the upload unreadable.
-        const csvWorkbook = new ExcelJS.Workbook();
-        await csvWorkbook.csv.readFile(req.file.path);
-        if (!csvWorkbook.worksheets[0]?.rowCount) {
-          logger.warn('Mock-test XLSX parsing failed and CSV fallback was empty', { ...uploadMeta, parseError: xlsxError.message });
-          throw xlsxError;
+    if (extension === '.csv') {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.csv.readFile(req.file.path);
+      const sheet = workbook.worksheets[0];
+      worksheetName = sheet?.name;
+      if (sheet) {
+        sheet.getRow(1).eachCell((cell, col) => { headers[String(cell.text).trim().toLowerCase()] = col; });
+        for (let number = 2; number <= sheet.rowCount; number += 1) { sourceRows += 1; if (sourceRows > MAX_QUESTION_IMPORT_ROWS) break; consumeRow(sheet.getRow(number), number); }
+      }
+    } else {
+      let readFirstSheet = false;
+      for await (const sheet of new ExcelJS.stream.xlsx.WorkbookReader(req.file.path)) {
+        if (readFirstSheet) break;
+        readFirstSheet = true;
+        worksheetName = sheet.name;
+        for await (const row of sheet) {
+          if (row.number === 1) { row.eachCell({ includeEmpty: true }, (cell, col) => { headers[String(cell.text).trim().toLowerCase()] = col; }); continue; }
+          sourceRows += 1;
+          if (sourceRows > MAX_QUESTION_IMPORT_ROWS) break;
+          consumeRow(row, row.number);
         }
-        logger.warn('Mock-test file used CSV fallback despite XLSX extension', uploadMeta);
-        workbook = csvWorkbook;
       }
     }
   } catch (error) {
     logger.warn('Mock-test spreadsheet could not be read', { ...uploadMeta, parseError: error.message });
     throw new AppError('This file is not a readable .xlsx or .csv file. Download the template, or export your Numbers sheet to Excel/CSV, and try again.', 400);
   }
-  const sheet = workbook.worksheets[0];
-  if (!sheet) {
+  if (!worksheetName) {
     logger.warn('Mock-test spreadsheet validation rejected', { ...uploadMeta, reason: 'empty_workbook' });
     throw new AppError('The workbook is empty', 400);
   }
-  if (sheet.rowCount - 1 > MAX_QUESTION_IMPORT_ROWS) {
-    logger.warn('Mock-test spreadsheet validation rejected', { ...uploadMeta, reason: 'row_limit_exceeded', rowCount: sheet.rowCount - 1, maximumRows: MAX_QUESTION_IMPORT_ROWS });
+  if (sourceRows > MAX_QUESTION_IMPORT_ROWS) {
+    logger.warn('Mock-test spreadsheet validation rejected', { ...uploadMeta, reason: 'row_limit_exceeded', rowCount: sourceRows, maximumRows: MAX_QUESTION_IMPORT_ROWS });
     throw new AppError(`A maximum of ${MAX_QUESTION_IMPORT_ROWS.toLocaleString()} question rows is allowed per upload`, 400);
   }
-  logger.info('Mock-test spreadsheet parsed', { ...uploadMeta, worksheetName: sheet.name, sourceRows: Math.max(0, sheet.rowCount - 1) });
-  const headers = {};
-  sheet.getRow(1).eachCell((cell, col) => {
-    headers[String(cell.text).trim().toLowerCase()] = col;
-  });
-  const get = (row, ...names) => {
-    const column = names.map((name) => headers[name.toLowerCase()]).find(Boolean);
-    return column ? row.getCell(column).text.trim() : '';
-  };
-  const rows = [];
-  const seen = new Set();
-  for (let number = 2; number <= sheet.rowCount; number += 1) {
+  logger.info('Mock-test spreadsheet parsed', { ...uploadMeta, worksheetName, sourceRows });
+  /* for (let number = 2; number <= sheet.rowCount; number += 1) {
     const row = sheet.getRow(number);
     const data = {
       sheetSubject: get(row, 'subject'),
@@ -720,7 +760,7 @@ const previewQuestions = asyncHandler(async (req, res) => {
       skipped: duplicateInUpload,
       validationErrors: errors,
     });
-  }
+  } */
   const existing = new Set();
   const candidates = rows.filter((row) => row.data.subject);
   // Keep the duplicate lookup under MongoDB's query-size limit for very large
