@@ -114,7 +114,14 @@ const resolveAssetUrl = (path) => {
   const assetBase = environment.apiBaseUrl.replace(/\/api\/v1$/, '');
   if (!path) return '';
   if (!path.startsWith('http')) return `${assetBase}${path}`;
-  return path.replace(/^https?:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2):5001/i, assetBase);
+  // Images uploaded while the app ran locally can still have localhost,
+  // emulator, or private-LAN URLs saved in the database. Those URLs cannot
+  // be opened by the deployed admin site. Serve the same uploaded file from
+  // the configured production API instead.
+  return path.replace(
+    /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2})(?::\d+)?(?=\/|$)/i,
+    assetBase
+  );
 };
 const validityLabel = (enrollment) => {
   if (!enrollment?.validUntil) return '—';
