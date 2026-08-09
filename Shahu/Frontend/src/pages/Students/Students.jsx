@@ -7,16 +7,19 @@ import {
   FiKey,
   FiSearch,
   FiSmartphone,
+  FiTrash2,
   FiUser,
   FiX,
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { apiClient } from '../../api/axios';
+import { useSelector } from 'react-redux';
 
 const date = (value) => (value ? new Date(value).toLocaleDateString('en-IN') : '—');
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
 
 export function Students() {
+  const user = useSelector((state) => state.auth.user);
   const [searchParams] = useSearchParams();
   const [students, setStudents] = useState([]);
   const [search, setSearch] = useState('');
@@ -95,6 +98,19 @@ export function Students() {
       toast.success('Temporary password issued and existing sessions revoked');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Unable to issue temporary password');
+    }
+  };
+  const permanentlyDeleteStudent = async () => {
+    if (!details?.student?._id) return;
+    const confirmation = window.prompt(`This permanently deletes ${details.student.name}, their enrollments, payments, attempts, notifications, and devices. Type DELETE STUDENT to continue.`);
+    if (confirmation !== 'DELETE STUDENT') return toast.error('Student was not deleted. Type DELETE STUDENT exactly to confirm.');
+    try {
+      const response = await apiClient.delete(`/system-data/students/${details.student._id}`, { data: { confirmation } });
+      toast.success(response.data.message || 'Student permanently deleted.');
+      setDetails(null);
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to permanently delete this student.');
     }
   };
   const exportStudents = async () => {
@@ -321,6 +337,7 @@ export function Students() {
                 <button className="student-credential-button" onClick={issueTemporaryPassword}>
                   <FiKey /> Issue temporary password
                 </button>
+                {user?.role === 'superadmin' ? <button className="danger-button student-permanent-delete" onClick={permanentlyDeleteStudent} type="button"><FiTrash2 /> Delete student permanently</button> : null}
               </header>
               <section>
                 <h3>Personal information saved from Android</h3>
