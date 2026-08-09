@@ -119,6 +119,24 @@ async function assertEnrollment(req, courseId) {
   if (!enrollment)
     throw new AppError('An active course enrollment is required', STATUS_CODES.FORBIDDEN);
 }
+async function assertStudentLearningFileAccess(userId, item) {
+  const accessWindow = {
+    student: userId,
+    status: 'active',
+    validFrom: { $lte: new Date() },
+    validUntil: { $gte: new Date() },
+  };
+  if (item.course) {
+    accessWindow.course = item.course;
+  } else {
+    // A subject-level syllabus is visible only through a course that contains
+    // the subject and to which the student is currently enrolled.
+    const courseIds = await Course.find({ subjects: item.subject, isDeleted: { $ne: true } }).distinct('_id');
+    accessWindow.course = { $in: courseIds };
+  }
+  const enrollment = await Enrollment.exists(accessWindow);
+  if (!enrollment) throw new AppError('Course access has expired or been revoked', STATUS_CODES.FORBIDDEN);
+}
 async function assertCourseSubject(courseId, subjectId) {
   if (!courseId || !subjectId) {
     throw new AppError('Course and subject are required', STATUS_CODES.BAD_REQUEST);
@@ -131,6 +149,12 @@ async function assertCourseSubject(courseId, subjectId) {
   if (!assigned) {
     throw new AppError('The selected subject is not assigned to this course', STATUS_CODES.BAD_REQUEST);
   }
+}
+
+async function assertSubjectExists(subjectId) {
+  if (!subjectId) throw new AppError('A subject is required', STATUS_CODES.BAD_REQUEST);
+  const subject = await Subject.exists({ _id: subjectId, isDeleted: { $ne: true } });
+  if (!subject) throw new AppError('The selected subject was not found', STATUS_CODES.NOT_FOUND);
 }
 
 const listSyllabus = asyncHandler(async (req, res) => {
@@ -222,7 +246,17 @@ const removeSyllabus = asyncHandler(async (req, res) => {
 const listLearningFiles = asyncHandler(async (req, res) => {
   await assertEnrollment(req, req.query.course);
   const filter = { isDeleted: { $ne: true } };
-  if (req.query.course) filter.course = req.query.course;
+  if (req.query.unassigned === 'true') {
+    filter.course = { $exists: false };
+    filter.category = 'syllabus-copy';
+  } else if (req.query.course) {
+    // Subject-level syllabus becomes available as soon as the subject is
+    // attached to this course, without a second upload.
+    filter.$or = [
+      { course: req.query.course },
+      { course: { $exists: false }, category: 'syllabus-copy' },
+    ];
+  }
   if (req.query.subject) filter.subject = req.query.subject;
   if (['syllabus-copy', 'notes', 'generated-questions', 'question-paper', 'mock-test', 'other'].includes(req.query.category)) {
     filter.category = req.query.category;
@@ -277,16 +311,7 @@ const downloadLearningFile = asyncHandler(async (req, res) => {
   });
   if (!item) throw new AppError('Learning file not found', 404);
   if (decoded.role === ROLES.STUDENT) {
-    const enrollment = await Enrollment.exists({
-      student: decoded.userId,
-      course: item.course,
-      status: 'active',
-      validFrom: { $lte: new Date() },
-      validUntil: { $gte: new Date() },
-    });
-    if (!enrollment) {
-      throw new AppError('Course access has expired or been revoked', STATUS_CODES.FORBIDDEN);
-    }
+    await assertStudentLearningFileAccess(decoded.userId, item);
   } else if (![ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.TEACHER].includes(decoded.role)) {
     throw new AppError('Download link is invalid', STATUS_CODES.FORBIDDEN);
   }
@@ -318,8 +343,7 @@ const previewLearningFile = asyncHandler(async (req, res) => {
     requesterRole: decoded.role,
   });
   if (decoded.role === ROLES.STUDENT) {
-    const enrollment = await Enrollment.exists({ student: decoded.userId, course: item.course, status: 'active', validFrom: { $lte: new Date() }, validUntil: { $gte: new Date() } });
-    if (!enrollment) throw new AppError('Course access has expired or been revoked', STATUS_CODES.FORBIDDEN);
+    await assertStudentLearningFileAccess(decoded.userId, item);
   } else if (![ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.TEACHER].includes(decoded.role)) {
     throw new AppError('Preview link is invalid', STATUS_CODES.FORBIDDEN);
   }
@@ -394,12 +418,22 @@ const createLearningFile = asyncHandler(async (req, res) => {
   if (req.file.size > 25 * 1024 * 1024)
     throw new AppError('Learning file cannot exceed 25 MB', 400);
   await assertSubjectAccess(req, req.body.subject);
-  await assertCourseSubject(req.body.course, req.body.subject);
+  await assertSubjectExists(req.body.subject);
+  const category = ['syllabus-copy', 'notes', 'generated-questions', 'question-paper', 'mock-test', 'other'].includes(req.body.category)
+    ? req.body.category
+    : 'notes';
+  const courseId = String(req.body.course || '').trim();
+  if (courseId) {
+    await assertCourseSubject(courseId, req.body.subject);
+  } else if (category !== 'syllabus-copy') {
+    throw new AppError('Create or select a course before uploading this material. Only syllabus can be added directly to a subject.', STATUS_CODES.BAD_REQUEST);
+  }
+  const learningPayload = { ...req.body };
+  delete learningPayload.course;
   const item = await LearningFile.create({
-    ...req.body,
-    category: ['syllabus-copy', 'notes', 'generated-questions', 'question-paper', 'mock-test', 'other'].includes(req.body.category)
-      ? req.body.category
-      : 'notes',
+    ...learningPayload,
+    ...(courseId ? { course: courseId } : {}),
+    category,
     originalFilename: readableFilename(req.file.originalname),
     storedFilename: req.file.filename,
     fileUrl: `/uploads/${req.file.filename}`,

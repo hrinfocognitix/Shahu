@@ -2,7 +2,9 @@ const mongoose = require('mongoose');
 const auditPlugin = require('./plugins/audit.plugin');
 const schema = new mongoose.Schema(
   {
-    course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true, index: true },
+    // A syllabus can be prepared before a subject is attached to a course.
+    // The controller keeps all other material course-specific.
+    course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', index: true },
     subject: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: true, index: true },
     syllabusUnit: { type: mongoose.Schema.Types.ObjectId, ref: 'SyllabusUnit' },
     title: { type: String, required: true, trim: true },

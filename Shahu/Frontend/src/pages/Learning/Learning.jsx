@@ -81,7 +81,7 @@ export function Learning() {
   }, []);
 
   useEffect(() => {
-    if (!course || !subject) {
+    if (!subject) {
       setSelectedTypes([]);
       setItems([]);
       return undefined;
@@ -89,7 +89,7 @@ export function Learning() {
 
     let isCurrentSelection = true;
     apiClient
-      .get('/learning/files', { params: { course, subject } })
+      .get('/learning/files', { params: course ? { course, subject } : { subject, unassigned: true } })
       .then((response) => {
         if (!isCurrentSelection) return;
         const savedTypes = [...new Set(
@@ -97,7 +97,7 @@ export function Learning() {
             .map((item) => (item.category === 'syllabus-copy' ? 'syllabus' : item.category))
             .filter((type) => materialOptions.some(([key]) => key === type)),
         )];
-        setSelectedTypes(savedTypes);
+        setSelectedTypes(savedTypes.length ? savedTypes : ['syllabus']);
       })
       .catch(() => {
         if (isCurrentSelection) {
@@ -139,7 +139,8 @@ export function Learning() {
     [course, courses, sourceCourse, subject, subjects],
   );
 
-  const documentTypes = selectedTypes;
+  // Before a course exists, only the subject-level syllabus is available.
+  const documentTypes = course ? selectedTypes : selectedTypes.filter((type) => type === 'syllabus');
   const savedNoteCount = useMemo(
     () => items.filter((item) => item.materialType === 'notes').length,
     [items],
@@ -154,7 +155,7 @@ export function Learning() {
   );
 
   const load = async () => {
-    if (!course || !subject || !selectedTypes.length) {
+    if (!subject || !selectedTypes.length) {
       setItems([]);
       return;
     }
@@ -164,7 +165,9 @@ export function Learning() {
       const fileResponses = await Promise.all(
         selectedTypes.map(async (type) => {
           const response = await apiClient.get('/learning/files', {
-            params: { course, subject, category: materialCategory(type) },
+            params: course
+              ? { course, subject, category: materialCategory(type) }
+              : { subject, unassigned: true, category: materialCategory(type) },
           });
           return (response.data.data || []).map((item) => ({
             ...item,
@@ -215,6 +218,10 @@ export function Learning() {
   }, [sourceCourse, sourceSubject]);
 
   const toggleMaterialType = (type) => {
+    if (!course && type !== 'syllabus') {
+      toast.info('Create or select a course before adding notes, tests, or other material.');
+      return;
+    }
     setSelectedTypes((current) =>
       current.includes(type) ? current.filter((item) => item !== type) : [...current, type],
     );
@@ -269,7 +276,7 @@ export function Learning() {
     const form = event.currentTarget;
     try {
       const data = new FormData(form);
-      data.append('course', course);
+      if (course) data.append('course', course);
       data.append('subject', subject);
       data.set('category', materialCategory(type));
       await apiClient.post('/learning/files', data);
@@ -484,7 +491,8 @@ export function Learning() {
                 (id) => String(id._id || id) === subject,
               );
               setCourse(nextCourse);
-              if (subject && !subjectBelongsToCourse) {
+              if (!nextCourse) setSelectedTypes(['syllabus']);
+              if (nextCourse && subject && !subjectBelongsToCourse) {
                 setSubject('');
               }
             }}
@@ -495,7 +503,7 @@ export function Learning() {
         </label>
         <label>
           <span>Subject</span>
-          <select disabled={!course} value={subject} onChange={(event) => setSubject(event.target.value)}>
+          <select value={subject} onChange={(event) => setSubject(event.target.value)}>
             <option value="">Select subject</option>
             {availableSubjects.map((item) => (
               <option key={item._id} value={item._id}>{item.name} · {item.subjectCode}</option>
@@ -550,13 +558,14 @@ export function Learning() {
         </form>
       ) : null}
 
-      {!course || !subject ? (
-        <div className="card student-empty">Select a course and subject to manage its content.</div>
+      {!subject ? (
+        <div className="card student-empty">Select a subject to add its syllabus. A course is optional for syllabus and required for all other material.</div>
       ) : !selectedTypes.length ? (
         <div className="card student-empty">Select at least one material type.</div>
       ) : (
         <div className="learning-layout">
           <aside>
+            {!course ? <div className="card student-empty">You are adding a subject-level syllabus. It will automatically appear after this subject is assigned to a course.</div> : null}
             {selectedTypes.includes('notes') ? (
               <form className="notes-upload-form material-panel material-panel--notes" onSubmit={uploadNotes}>
                 <div className="notes-upload-heading">
