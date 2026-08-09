@@ -16,6 +16,7 @@ export function Notifications() {
   const [sending, setSending] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [deleting, setDeleting] = useState(false);
+  const canPermanentlyDelete = ['admin', 'superadmin'].includes(user?.role);
 
   const load = async () => {
     try {
@@ -97,7 +98,7 @@ export function Notifications() {
         <div className="form-actions"><button type="submit" className="primary-button" disabled={sending}><FiSend /> {sending ? 'Sending…' : 'Send notification'}</button></div>
       </form>
     </Card>
-    <div className="section-heading notification-list-heading"><div><FiBell /><h2>Recent notifications</h2></div>{user?.role === 'superadmin' && notifications.length ? <div className="notification-actions"><button type="button" className="secondary-button" onClick={selectAll}>{selectedIds.length === notifications.length ? 'Clear selection' : 'Select all'}</button><button type="button" className="danger-button" disabled={!selectedIds.length || deleting} onClick={removeSelected}><FiTrash2 /> {deleting ? 'Deleting…' : `Delete permanently (${selectedIds.length})`}</button></div> : null}</div>
-    <div className="record-list">{notifications.length ? notifications.map((item) => <Card key={item._id} className="record-row notification-row">{user?.role === 'superadmin' ? <input type="checkbox" aria-label={`Select ${item.title}`} checked={selectedIds.includes(item._id)} onChange={() => toggleSelection(item._id)} /> : null}<div><strong>{item.title}</strong><p>{item.description || 'No message'}</p></div><small>{item.student?.name ? `Sent to ${item.student.name}` : item.audience === 'course' ? `Sent to enrolled students: ${item.course?.name || 'Selected course'}` : 'Sent to all students'}</small>{user?.role === 'superadmin' ? <button className="text-button danger" disabled={deleting} onClick={() => removeOne(item._id)} type="button"><FiTrash2 /> Delete permanently</button> : null}</Card>) : <Card className="student-empty">No notifications sent yet.</Card>}</div>
+    <div className="section-heading notification-list-heading"><div><FiBell /><h2>Recent notifications</h2></div>{canPermanentlyDelete && notifications.length ? <div className="notification-actions"><button type="button" className="secondary-button" onClick={selectAll}>{selectedIds.length === notifications.length ? 'Clear selection' : 'Select all'}</button><button type="button" className="danger-button" disabled={!selectedIds.length || deleting} onClick={removeSelected}><FiTrash2 /> {deleting ? 'Deleting…' : `Delete permanently (${selectedIds.length})`}</button></div> : null}</div>
+    <div className="record-list">{notifications.length ? notifications.map((item) => <Card key={item._id} className="record-row notification-row">{canPermanentlyDelete ? <input type="checkbox" aria-label={`Select ${item.title}`} checked={selectedIds.includes(item._id)} onChange={() => toggleSelection(item._id)} /> : null}<div><strong>{item.title}</strong><p>{item.description || 'No message'}</p></div><small>{item.student?.name ? `Sent to ${item.student.name}` : item.audience === 'course' ? `Sent to enrolled students: ${item.course?.name || 'Selected course'}` : 'Sent to all students'}</small>{canPermanentlyDelete ? <button className="text-button danger" disabled={deleting} onClick={() => removeOne(item._id)} type="button"><FiTrash2 /> Delete permanently</button> : null}</Card>) : <Card className="student-empty">No notifications sent yet.</Card>}</div>
   </section>;
 }

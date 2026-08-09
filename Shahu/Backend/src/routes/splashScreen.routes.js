@@ -10,7 +10,9 @@ router.get('/active', controller.active);
 router.use(authenticate, authorize(ROLES.ADMIN, ROLES.SUPERADMIN));
 router.get('/', controller.list);
 router.post('/', upload.media.single('file'), controller.create);
-router.delete('/:id/permanent', authorize(ROLES.SUPERADMIN), controller.permanentlyRemove);
+// Calendar administrators create and manage scheduled splash media, so they
+// can also permanently remove it. Teachers remain excluded.
+router.delete('/:id/permanent', authorize(ROLES.ADMIN, ROLES.SUPERADMIN), controller.permanentlyRemove);
 router.patch('/:id', controller.update);
 router.delete('/:id', controller.remove);
 module.exports = router;

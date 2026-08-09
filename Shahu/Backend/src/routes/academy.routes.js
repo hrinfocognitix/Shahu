@@ -235,7 +235,9 @@ const updateCoursePayload = async (request) => {
   }
 
   if (Array.isArray(request.body.subjects)) {
-    const nextSubjects = new Set(request.body.subjects.map(String));
+    // Accept both IDs and populated subject objects. This protects existing
+    // course subjects when an admin updates only the course status.
+    const nextSubjects = new Set(request.body.subjects.map((subject) => String(subject?._id || subject)));
     const removedSubjects = (existing.subjects || []).filter(
       (subject) => !nextSubjects.has(String(subject))
     );
@@ -669,9 +671,9 @@ module.exports = [
           });
         },
       }),
-      // Staff can archive notifications; only Super Admin can remove any
-      // record permanently.
-      { writeRoles: teacherRoles, permanentRemoveRoles: [ROLES.SUPERADMIN] }
+      // Admin and Super Admin manage the notification history permanently;
+      // teachers retain normal write/archive access only.
+      { writeRoles: teacherRoles, permanentRemoveRoles: [ROLES.ADMIN, ROLES.SUPERADMIN] }
     ),
   ],
   [

@@ -245,6 +245,9 @@ export function Management({ resource }) {
         benefitsText: joinLines(item.benefits),
         useCasesText: joinLines(item.useCases),
         highlightsText: joinLines(item.highlights),
+        // The course API populates subjects as objects. Submit stable IDs so a
+        // status-only edit never looks like removing all existing subjects.
+        subjects: (item.subjects || []).map((subject) => subject?._id || subject),
         detailSections: item.detailSections || [],
         subjectDetails: item.subjectDetails || [],
       });
