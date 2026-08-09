@@ -13,6 +13,7 @@ const actions = [
   ['Reports', ROUTES.reports, FiFileText, 'Purchase and academy reports'],
   ['Audit Logs', ROUTES.auditLogs, FiActivity, 'Every recorded admin action'],
   ['Deleted Items', ROUTES.deletedRecords, FiTrash2, 'Review and permanently delete records'],
+  ['System Data', ROUTES.systemData, FiTrash2, 'View MongoDB usage and clear academy data'],
 ];
 
 export function SuperAdminDashboard() {

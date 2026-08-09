@@ -310,6 +310,13 @@ const previewLearningFile = asyncHandler(async (req, res) => {
   }
   const item = await LearningFile.findOne({ _id: req.params.id, isDeleted: { $ne: true } });
   if (!item) throw new AppError('Learning file not found', STATUS_CODES.NOT_FOUND);
+  logger.info('Learning file preview requested', {
+    requestId: req.requestId,
+    learningFileId: String(item._id),
+    fileName: item.originalFilename,
+    mimeType: item.mimeType,
+    requesterRole: decoded.role,
+  });
   if (decoded.role === ROLES.STUDENT) {
     const enrollment = await Enrollment.exists({ student: decoded.userId, course: item.course, status: 'active', validFrom: { $lte: new Date() }, validUntil: { $gte: new Date() } });
     if (!enrollment) throw new AppError('Course access has expired or been revoked', STATUS_CODES.FORBIDDEN);
@@ -335,6 +342,7 @@ const previewLearningFile = asyncHandler(async (req, res) => {
     }
     res.type(item.mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(item.originalFilename)}"`);
+    logger.info('Learning file preview streaming', { requestId: req.requestId, learningFileId: String(item._id), previewMimeType: item.mimeType });
     return res.sendFile(sourcePath);
   }
 
@@ -350,9 +358,11 @@ const previewLearningFile = asyncHandler(async (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(path.basename(item.originalFilename, path.extname(item.originalFilename)))}.pdf"`);
     res.once('finish', cleanup);
     res.once('close', cleanup);
+    logger.info('Learning document preview converted', { requestId: req.requestId, learningFileId: String(item._id), previewMimeType: 'application/pdf' });
     return res.sendFile(path.join(temporaryDir, generated));
   } catch (error) {
     await cleanup();
+    logger.warn('Learning document preview conversion failed', { requestId: req.requestId, learningFileId: String(item._id), error: error.message, errorCode: error.code });
     if (error && error.code === 'ENOENT') {
       throw new AppError('Document preview conversion is not configured. Install LibreOffice on the server.', STATUS_CODES.SERVICE_UNAVAILABLE);
     }

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { ROUTES } from '../../config/routes';
 import {
@@ -18,7 +18,8 @@ import {
   FiUsers,
   FiVideo,
 } from 'react-icons/fi';
-import founderLogo from '../../assets/lokaraja-founder.png';
+import brandLogo from '../../assets/gs-by-anand-sir-icon.png';
+import { toggleSidebar } from '../../redux/slices/uiSlice';
 
 const links = [
   ['Dashboard', ROUTES.dashboard, FiGrid],
@@ -38,6 +39,7 @@ const links = [
   ['Reports', ROUTES.reports, FiFileText, ['admin', 'superadmin']],
   ['Splash Screen Upload', ROUTES.settings, FiImage, ['admin', 'superadmin']],
   ['Mobile API Capacity', ROUTES.mobileApiCapacity, FiMonitor, 'superadmin'],
+  ['System Data', ROUTES.systemData, FiTrash2, 'superadmin'],
   ['Deleted Items', ROUTES.deletedRecords, FiTrash2, 'superadmin'],
 ];
 const studentLinks = [
@@ -52,6 +54,7 @@ const studentLinks = [
 ];
 
 export function Sidebar() {
+  const dispatch = useDispatch();
   const open = useSelector((state) => state.ui.sidebarOpen);
   const user = useSelector((state) => state.auth.user);
   const { t } = useTranslation();
@@ -59,7 +62,7 @@ export function Sidebar() {
   return (
     <aside className={`sidebar ${open ? 'open' : 'collapsed'}`}>
       <div className="sidebar-brand">
-        <img src={founderLogo} alt="GS BY Anand Sir" />
+        <img src={brandLogo} alt="GS BY Anand Sir" />
         <div>
           <h1>GS BY</h1>
           <span>Anand Sir</span>
@@ -73,7 +76,7 @@ export function Sidebar() {
               !role || (Array.isArray(role) ? role.includes(user?.role) : user?.role === role)
           )
           .map(([label, to, Icon]) => (
-            <NavLink key={to} to={to}>
+            <NavLink key={to} to={to} onClick={() => { if (window.matchMedia('(max-width: 760px)').matches) dispatch(toggleSidebar()); }}>
               <Icon />
               <span>{t(label, label)}</span>
             </NavLink>

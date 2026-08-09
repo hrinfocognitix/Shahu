@@ -17,6 +17,7 @@ import { apiClient } from '../../api/axios';
 import { LoginModal } from '../../components/LoginModal/LoginModal';
 import { environment } from '../../config/environment';
 import founderLogo from '../../assets/lokaraja-founder.png';
+import brandLogo from '../../assets/gs-by-anand-sir-icon.png';
 
 const fallbackSlides = [
   { resourceUrl: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=1800&q=85', title: 'Shape a future you believe in.' },
@@ -75,7 +76,12 @@ function resolveAssetUrl(path) {
   const assetBase = environment.apiBaseUrl.replace(/\/api\/v1$/, '');
   if (!path) return `${assetBase}/uploads/course-default-poster.png`;
   if (!path.startsWith('http')) return `${assetBase}${path}`;
-  return path.replace(/^https?:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2):5001/i, assetBase);
+  // Keep legacy highlight images usable when they were originally uploaded
+  // against localhost, an emulator, or a private development network.
+  return path.replace(
+    /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2})(?::\d+)?(?=\/|$)/i,
+    assetBase
+  );
 }
 
 export function Home() {
@@ -172,7 +178,7 @@ export function Home() {
     <main className="lokaraja">
       <header className="lokaraja-nav">
         <Link to="/" className="lokaraja-brand">
-          <img className="brand-logo" src={founderLogo} alt="GS BY Anand Sir" />
+          <img className="brand-logo" src={brandLogo} alt="GS BY Anand Sir" />
           <span>
             GS BY <small>Anand Sir</small>
           </span>
@@ -450,7 +456,7 @@ export function Home() {
 
       <footer>
         <div className="lokaraja-brand">
-          <img className="brand-logo" src={founderLogo} alt="GS BY Anand Sir" />
+          <img className="brand-logo" src={brandLogo} alt="GS BY Anand Sir" />
           <span>
             GS BY <small>Anand Sir</small>
           </span>

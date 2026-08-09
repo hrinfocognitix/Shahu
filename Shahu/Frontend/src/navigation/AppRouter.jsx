@@ -22,6 +22,7 @@ import { StudentWorkspace } from '../pages/StudentWorkspace/StudentWorkspace';
 import { AuditLogs } from '../pages/AuditLogs/AuditLogs';
 import { DeletedRecords } from '../pages/DeletedRecords/DeletedRecords';
 import { MobileApiCapacity } from '../pages/MobileApiCapacity/MobileApiCapacity';
+import { SystemData } from '../pages/SystemData/SystemData';
 import { Results } from '../pages/Results/Results';
 import { Calendar } from '../pages/Calendar/Calendar';
 import { ROUTES } from '../config/routes';
@@ -59,6 +60,7 @@ export const router = createBrowserRouter([
           { path: ROUTES.coursePurchases, element: <Purchases /> },
           { path: ROUTES.auditLogs, element: <AuditLogs /> },
           { path: ROUTES.deletedRecords, element: <DeletedRecords /> },
+          { path: ROUTES.systemData, element: <SystemData /> },
           { path: ROUTES.subjects, element: <Subjects /> },
           { path: ROUTES.syllabus, element: <Learning /> },
           { path: ROUTES.learning, element: <Learning /> },

@@ -32,6 +32,7 @@ export const ROUTES = {
   coursePurchases: '/course-purchases',
   auditLogs: '/audit-logs',
   deletedRecords: '/deleted-records',
+  systemData: '/system-data',
   studentHome: '/student/home',
   studentCourses: '/student/courses',
   studentSyllabus: '/student/syllabus',

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FiEdit2, FiFile, FiPlus, FiTrash2, FiUpload } from 'react-icons/fi';
+import { FiEdit2, FiEye, FiFile, FiPlus, FiTrash2, FiUpload, FiX } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 
 import { apiClient } from '../../api/axios';
@@ -62,6 +62,11 @@ export function Learning() {
   const [importTypes, setImportTypes] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [previewItem, setPreviewItem] = useState(null);
+  const [previewZoom, setPreviewZoom] = useState(1);
+
+  const previewUrl = previewItem ? resolveAssetUrl(previewItem.previewUrl) : '';
+  const previewType = String(previewItem?.previewMimeType || previewItem?.mimeType || '').toLowerCase();
 
   useEffect(() => {
     Promise.all([
@@ -680,7 +685,12 @@ export function Learning() {
                       <p>{item.topic || item.description || 'No description added'}</p>
                       <small className="uploaded-file-name">File: {item.originalFilename || 'Uploaded document'}</small>
                     </div>
-                    {item.previewUrl ? <img alt={`Preview of ${item.originalFilename}`} className="learning-file-preview" src={resolveAssetUrl(item.previewUrl)} /> : null}
+                    {(item.previewMimeType || item.mimeType || '').startsWith('image/') && item.previewUrl ? (
+                      <button aria-label={`Preview ${item.originalFilename || 'image'}`} className="learning-file-thumbnail" onClick={() => { setPreviewZoom(1); setPreviewItem(item); }} type="button">
+                        <img alt={`Preview of ${item.originalFilename}`} className="learning-file-preview" src={resolveAssetUrl(item.previewUrl)} />
+                      </button>
+                    ) : null}
+                    {item.previewUrl ? <button className="learning-preview-button" onClick={() => { setPreviewZoom(1); setPreviewItem(item); }} type="button"><FiEye /> Preview</button> : null}
                     {item.downloadUrl ? <a href={resolveAssetUrl(item.downloadUrl)} rel="noreferrer" target="_blank"><FiFile /> Open</a> : null}
                     <div className="learning-row-actions">
                       <button aria-label="Edit content" onClick={() => editItem(item)} type="button"><FiEdit2 /></button>
@@ -693,6 +703,20 @@ export function Learning() {
           </main>
         </div>
       )}
+      {previewItem ? <div className="learning-preview-overlay" onMouseDown={() => setPreviewItem(null)}>
+        <section aria-label="Learning file preview" className="learning-preview-modal" onMouseDown={(event) => event.stopPropagation()}>
+          <header>
+            <div><p className="eyebrow">PREVIEW</p><h2>{previewItem.title || previewItem.originalFilename || 'Learning file'}</h2></div>
+            <div className="learning-preview-tools">
+              {previewType.startsWith('image/') ? <><button aria-label="Zoom out" disabled={previewZoom <= 1} onClick={() => setPreviewZoom((value) => Math.max(1, value - .25))} type="button">−</button><button aria-label="Zoom in" disabled={previewZoom >= 3} onClick={() => setPreviewZoom((value) => Math.min(3, value + .25))} type="button">+</button></> : null}
+              <button aria-label="Close preview" onClick={() => setPreviewItem(null)} type="button"><FiX /></button>
+            </div>
+          </header>
+          <div className="learning-preview-content">
+            {previewType.startsWith('image/') ? <div className="learning-preview-image"><img alt={previewItem.title || 'Learning preview'} src={previewUrl} style={{ transform: `scale(${previewZoom})` }} /></div> : <iframe src={previewUrl} title={previewItem.title || 'Learning file preview'} />}
+          </div>
+        </section>
+      </div> : null}
     </section>
   );
 }

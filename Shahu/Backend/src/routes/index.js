@@ -14,6 +14,7 @@ const adminRoutes = require('./admin.routes');
 const paymentRoutes = require('./payment.routes');
 const adminPaymentRoutes = require('./adminPayment.routes');
 const resultsRoutes = require('./results.routes');
+const systemDataRoutes = require('./systemData.routes');
 
 const router = express.Router();
 
@@ -32,6 +33,7 @@ router.use('/deleted-records', deletedRecordsRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/admin/payments', adminPaymentRoutes);
 router.use('/results', resultsRoutes);
+router.use('/system-data', systemDataRoutes);
 academyRoutes.forEach(([path, route]) => router.use(path, route));
 
 module.exports = router;
