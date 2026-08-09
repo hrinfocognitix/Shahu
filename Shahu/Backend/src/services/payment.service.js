@@ -47,6 +47,10 @@ async function fetchQrPayments(qrId) {
   return requireRazorpayClient().qrCode.fetchPayments(qrId);
 }
 
+async function closeQr(qrId) {
+  return requireRazorpayClient().qrCode.close(qrId);
+}
+
 function verifyWebhookSignature(rawBody, signature) {
   if (!env.razorpay.webhookSecret || !signature || !Buffer.isBuffer(rawBody)) return false;
   const expected = require('crypto').createHmac('sha256', env.razorpay.webhookSecret).update(rawBody).digest('hex');
@@ -68,4 +72,4 @@ async function fetchOrderPayments(orderId) {
   return requireRazorpayClient().orders.fetchPayments(orderId);
 }
 
-module.exports = { createOrder, getRazorpayClient, createSingleUseUpiQr, fetchQr, fetchQrPayments, verifyWebhookSignature, verifyCheckoutSignature, fetchPayment, fetchOrderPayments };
+module.exports = { createOrder, getRazorpayClient, createSingleUseUpiQr, fetchQr, fetchQrPayments, closeQr, verifyWebhookSignature, verifyCheckoutSignature, fetchPayment, fetchOrderPayments };

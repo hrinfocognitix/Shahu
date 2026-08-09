@@ -8,6 +8,7 @@ const router = express.Router();
 router.post('/create', paymentController.create);
 // Razorpay dynamic QR checkout. Course price is fetched server-side, never accepted from the app.
 router.post('/', paymentController.createRazorpayQr);
+router.post('/qr', paymentController.createRazorpayQr);
 router.post('/checkout/order', paymentController.createRazorpayCheckoutOrder);
 router.post('/checkout/verify', paymentController.verifyRazorpayCheckoutPayment);
 // React Native Razorpay Standard Checkout aliases.

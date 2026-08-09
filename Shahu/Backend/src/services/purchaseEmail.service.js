@@ -1,0 +1,21 @@
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+const date = (value) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+function createPurchaseConfirmationEmail({ student, course, transaction, enrollment, temporaryPassword }) {
+  const transactionId = transaction.gatewayReference || transaction.transactionReference || transaction.purchaseId;
+  const paidMinor = transaction.pricing?.paidAmountMinor;
+  const paid = paidMinor != null ? Number(paidMinor) / 100 : Number(transaction.pricing?.paidAmount || 0);
+  const greeting = escapeHtml(student.name || 'Student');
+  const courseName = escapeHtml(course.name || 'Course');
+  const loginDetails = temporaryPassword
+    ? `<div style="margin-top:18px;padding:14px 16px;border-radius:10px;background:#fff5e9;border:1px solid #f2cf9a"><strong style="color:#6d4d22">First-time login details</strong><br/>Login ID: ${escapeHtml(student.email)}<br/>Temporary password: <strong>${escapeHtml(temporaryPassword)}</strong><br/><span style="color:#6f665b">Please change your password after you sign in.</span></div>`
+    : '';
+  const textLoginDetails = temporaryPassword ? `\n\nLogin ID: ${student.email}\nTemporary password: ${temporaryPassword}\nPlease change your password after you sign in.` : '';
+  return {
+    subject: `Course activated — ${course.name} | GS BY Anand Sir`,
+    text: `Dear ${student.name || 'Student'},\n\nYour payment was successful and ${course.name} is now active.\n\nCourse: ${course.name}\nAmount paid: INR ${paid.toFixed(2)}\nReceipt number: ${transaction.receiptNumber}\nTransaction ID: ${transactionId}\nValidity: ${enrollment.validityDays} days (${date(enrollment.validFrom)} to ${date(enrollment.validUntil)})${textLoginDetails}\n\nYour detailed GS BY Anand Sir course receipt is attached as a PDF.`,
+    html: `<div style="margin:0;padding:24px;background:#f6f1eb;font-family:Arial,sans-serif;color:#2b261f"><div style="max-width:620px;margin:auto;overflow:hidden;border-radius:18px;background:#fff;box-shadow:0 8px 28px rgba(43,38,31,.14)"><div style="padding:24px 28px;background:linear-gradient(135deg,#173f3b,#a87c43);color:#fff"><div style="display:inline-block;margin-right:10px;padding:8px 10px;border:1px solid rgba(255,255,255,.75);border-radius:10px;font-weight:800;letter-spacing:1px">GS</div><span style="font-size:20px;font-weight:800">GS BY Anand Sir</span><div style="margin-top:18px;font-size:13px;letter-spacing:1.3px">COURSE PURCHASE CONFIRMATION</div></div><div style="padding:28px"><h1 style="margin:0 0 10px;font-size:23px;color:#2f5e58">Congratulations, ${greeting}!</h1><p style="margin:0 0 22px;line-height:1.6">Your payment was successful. <strong>${courseName}</strong> is now active in your student app.</p><div style="padding:18px;border-radius:12px;background:#f7f3ed"><div style="margin-bottom:12px;font-size:18px;font-weight:800;color:#2f5e58">${courseName}</div><table style="width:100%;border-collapse:collapse;font-size:14px"><tr><td style="padding:7px 0;color:#6f665b">Amount paid</td><td style="padding:7px 0;text-align:right;font-weight:700">INR ${paid.toFixed(2)}</td></tr><tr><td style="padding:7px 0;color:#6f665b">Receipt number</td><td style="padding:7px 0;text-align:right;font-weight:700">${escapeHtml(transaction.receiptNumber)}</td></tr><tr><td style="padding:7px 0;color:#6f665b">Transaction ID</td><td style="padding:7px 0;text-align:right;font-weight:700">${escapeHtml(transactionId)}</td></tr><tr><td style="padding:7px 0;color:#6f665b">Course validity</td><td style="padding:7px 0;text-align:right;font-weight:700">${enrollment.validityDays} days</td></tr><tr><td style="padding:7px 0;color:#6f665b">Access period</td><td style="padding:7px 0;text-align:right;font-weight:700">${date(enrollment.validFrom)} – ${date(enrollment.validUntil)}</td></tr></table></div>${loginDetails}<p style="margin:22px 0 0;line-height:1.55;color:#554c42">Your complete course-purchase receipt is attached as a PDF. Keep it for your records.</p></div><div style="padding:16px 28px;background:#f7f3ed;color:#6f665b;font-size:12px">GS BY Anand Sir · Academy support and learning portal</div></div></div>`,
+  };
+}
+
+module.exports = { createPurchaseConfirmationEmail };

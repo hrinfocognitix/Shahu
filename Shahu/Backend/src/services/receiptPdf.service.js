@@ -9,7 +9,7 @@ function createReceiptPdf({ receiptNumber, purchaseId, student, course, transact
   const paid =
     paidMinor != null ? Number(paidMinor) / 100 : Number(transaction.pricing?.paidAmount || 0);
   const lines = [
-    'LOKARAJA CAREER ACADEMY',
+    'GS BY ANAND SIR',
     'COURSE PURCHASE RECEIPT',
     '',
     `Receipt: ${receiptNumber}`,
@@ -30,14 +30,17 @@ function createReceiptPdf({ receiptNumber, purchaseId, student, course, transact
     `Valid from: ${new Date(enrollment.validFrom).toLocaleDateString('en-IN')}`,
     `Valid until: ${new Date(enrollment.validUntil).toLocaleDateString('en-IN')}`,
     '',
-    'This receipt was generated after administrator payment verification.',
+    'This is an official GS BY Anand Sir course-purchase receipt.',
   ];
-  const text = lines
+  const body = lines
     .map(
       (line, index) =>
-        `BT /F1 ${index < 2 ? 16 : 10} Tf 50 ${790 - index * 27} Td (${escapePdfText(line)}) Tj ET`
+        `BT /F1 ${index < 2 ? 16 : 10} Tf 50 ${675 - index * 25} Td (${escapePdfText(line)}) Tj ET`
     )
     .join('\n');
+  // A compact vector wordmark keeps the receipt branded without relying on a
+  // remote image URL or a fragile filesystem asset in production.
+  const text = `q\n0.09 0.25 0.23 rg\n0 744 595 98 re f\n0.66 0.49 0.26 rg\n28 762 52 52 re f\nQ\nBT /F1 23 Tf 1 1 1 rg 96 790 Td (GS BY Anand Sir) Tj ET\nBT /F1 10 Tf 0.91 0.94 0.92 rg 96 771 Td (Official course purchase receipt) Tj ET\nBT /F1 18 Tf 1 1 1 rg 39 780 Td (GS) Tj ET\n${body}`;
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',

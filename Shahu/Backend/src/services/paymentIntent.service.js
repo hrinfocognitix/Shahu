@@ -12,7 +12,9 @@ const User = require('../models/User');
 const { hashPassword } = require('../helpers/bcrypt.helper');
 const { sendEmail } = require('./email.service');
 const { createReceiptPdf } = require('./receiptPdf.service');
-const { createOrder, createSingleUseUpiQr, fetchQr, fetchQrPayments, fetchPayment, fetchOrderPayments, verifyCheckoutSignature, verifyWebhookSignature } = require('./payment.service');
+const { createPurchaseConfirmationEmail } = require('./purchaseEmail.service');
+const { createOrder, createSingleUseUpiQr, fetchQr, fetchQrPayments, closeQr, fetchPayment, fetchOrderPayments, verifyCheckoutSignature, verifyWebhookSignature } = require('./payment.service');
+const logger = require('../config/logger');
 const { ROLES } = require('../constants/roles');
 const env = require('../config/env');
 const AppError = require('../utils/appError');
@@ -185,21 +187,44 @@ async function createRazorpayQrPayment(body) {
   const account = course.primaryPaymentAccount ? await AcademyRecord.findOne({ _id: course.primaryPaymentAccount, module: 'payment-account', status: 'active', isDeleted: { $ne: true } }) : null;
   if (!account) throw new AppError('An active payment account is required for this course.', STATUS_CODES.CONFLICT);
   const internalReference = createTransactionReference();
-  const closeBy = Math.floor(Date.now() / 1000) + (30 * 60);
+  // Razorpay requires close_by to be at least 15 minutes. The academy's own
+  // expiry is four minutes; the scheduled backend job closes the QR at that
+  // time and prevents a late payment from activating the course.
+  const closeBy = Math.floor(Date.now() / 1000) + (15 * 60);
+  const expiresAt = new Date(Date.now() + (4 * 60 * 1000));
   let qr;
     try {
       qr = await createSingleUseUpiQr({ name: `Course ${String(course.name).slice(0, 28)}`, amountMinor, description: 'Course Payment', closeBy, notes: { internal_reference: internalReference, course_id: String(course._id) } });
     } catch (_) { throw new AppError('Unable to create the Razorpay payment QR. Check Razorpay QR access and configuration.', STATUS_CODES.SERVICE_UNAVAILABLE); }
     const accessToken = crypto.randomBytes(32).toString('base64url');
-    const expiresAt = new Date(Number(qr.close_by || closeBy) * 1000);
     const intent = await PaymentIntent.create({
       transactionReference: internalReference, internalReference, course: course._id, paymentAccount: account._id,
       email: buyer.email, buyer, provider: 'razorpay', paymentMode: 'merchant-gateway', merchantType: 'business', amount, amountMinor,
       upiId: 'razorpay-qr@razorpay', payeeName: 'Razorpay', transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING',
       razorpay: { qrId: qr.id, qrImageUrl: qr.image_url, qrContent: qr.image_content, expiresAt },
     });
+    logger.info('Razorpay dynamic QR created', { courseId: String(course._id), paymentId: String(intent._id), qrId: qr.id, amountMinor, expiresAt: expiresAt.toISOString() });
     return { paymentId: String(intent._id), courseId: String(course._id), courseName: course.name, amount: formatAmount(amount), amountMinor, currency: 'INR', provider: 'razorpay', status: 'PENDING', upiId: '', payeeName: 'Razorpay', transactionReference: internalReference, transactionNote: 'Course Payment', paymentUrl: '', internalReference, qrId: qr.id, qrImageUrl: qr.image_url, qrCodeValue: qr.image_content || qr.image_url, expiresAt: expiresAt.toISOString(), paymentToken: accessToken };
   }
+
+async function expireRazorpayQrPayments() {
+  const intents = await PaymentIntent.find({ provider: 'razorpay', status: 'PENDING', 'razorpay.qrId': { $exists: true }, 'razorpay.expiresAt': { $lte: new Date() } }).limit(100);
+  for (const intent of intents) {
+    try {
+      const payments = await fetchQrPayments(intent.razorpay.qrId);
+      const captured = (payments?.items || []).find((item) => item.status === 'captured' && Number(item.amount) === Number(intent.amountMinor) && item.currency === 'INR');
+      if (captured) {
+        const updated = await PaymentIntent.findOneAndUpdate({ _id: intent._id, status: 'PENDING' }, { $set: { status: 'PAID', 'razorpay.paymentId': captured.id, 'razorpay.paidAt': new Date() } }, { returnDocument: 'after' });
+        if (updated) await approvePayment(updated._id, { role: 'system' }, 'razorpay-qr-expiry-reconcile', { expectedStatus: 'PAID', finalStatus: 'PAID', auditAction: 'razorpay_qr_payment_verified', reason: 'Captured QR payment found during expiry reconciliation' });
+      } else {
+        await closeQr(intent.razorpay.qrId).catch(() => undefined);
+        await PaymentIntent.updateOne({ _id: intent._id, status: 'PENDING' }, { $set: { status: 'EXPIRED', rejectionReason: 'The four-minute QR payment window expired.' } });
+      }
+    } catch (error) {
+      logger.warn('Razorpay QR expiry processing failed', { paymentId: String(intent._id), qrId: intent.razorpay.qrId, error: error.message });
+    }
+  }
+}
 
   async function createRazorpayCheckoutOrder(body) {
     if (!body.courseId) throw new AppError('Course is required.', STATUS_CODES.BAD_REQUEST);
@@ -298,6 +323,14 @@ async function processRazorpayWebhook(rawBody, headers) {
     ],
   });
   if (!intent || Number(payment.amount) !== Number(intent.amountMinor)) return { ignored: true };
+  // Razorpay's API close_by minimum is 15 minutes, but the academy QR window
+  // is four minutes. Accept a QR payment only when Razorpay recorded it before
+  // that server-stored deadline, even if webhook delivery is delayed.
+  if (intent.razorpay?.qrId && intent.razorpay.expiresAt && Number(payment.created_at || 0) * 1000 > new Date(intent.razorpay.expiresAt).getTime()) {
+    await closeQr(intent.razorpay.qrId).catch(() => undefined);
+    await PaymentIntent.updateOne({ _id: intent._id, status: 'PENDING' }, { $set: { status: 'EXPIRED', rejectionReason: 'The four-minute QR payment window expired.' } });
+    return { ignored: true, reason: 'qr_expired' };
+  }
   if (eventId && intent.razorpay.webhookEventIds.includes(eventId)) return { duplicate: true };
   const updated = await PaymentIntent.findOneAndUpdate(
     { _id: intent._id, status: { $in: ['PENDING', 'VERIFICATION_PENDING'] }, ...(eventId ? { 'razorpay.webhookEventIds': { $ne: eventId } } : {}) },
@@ -430,15 +463,12 @@ async function approvePayment(paymentId, admin, ip, options = {}) {
     try {
       transaction.receiptNumber = transaction.receiptNumber || `RCP-${transaction.purchaseId}`;
       const receiptPdf = createReceiptPdf({ receiptNumber: transaction.receiptNumber, purchaseId: transaction.purchaseId, student, course: enrolledCourse, transaction, enrollment });
-      const passwordDetails = temporaryPassword
-        ? `\n\nLogin ID: ${student.email} or ${student.profile?.mobile || student.profile?.phone}.\nTemporary password: ${temporaryPassword}\nYou may change your password later from the app.`
-        : '';
-      const transactionId = transaction.gatewayReference || transaction.transactionReference || transaction.purchaseId;
+      const email = createPurchaseConfirmationEmail({ student, course: enrolledCourse, transaction, enrollment, temporaryPassword });
       const delivery = await sendEmail({
         to: verified.email,
-        subject: `Payment successful — ${enrolledCourse.name} | Lokaraja Career Academy`,
-        text: `Dear ${student.name || 'Student'},\n\nThank you for your purchase. Your payment was successful and ${enrolledCourse.name} is now active.\nTransaction ID: ${transactionId}\nReceipt number: ${transaction.receiptNumber}\n\nप्रिय विद्यार्थी,\nतुमची फी यशस्वीरीत्या प्राप्त झाली आहे. ${enrolledCourse.name} हा कोर्स आता तुमच्या खात्यात सक्रिय आहे.\nव्यवहार क्रमांक: ${transactionId}\nपावती क्रमांक: ${transaction.receiptNumber}${passwordDetails}\n\nYour payment receipt is attached. / तुमची पावती जोडलेली आहे.`,
-        html: `<p>Dear ${student.name || 'Student'},</p><p>Thank you for your purchase. Your payment was successful and <strong>${enrolledCourse.name}</strong> is now active.</p><p><strong>Transaction ID:</strong> ${transactionId}<br/><strong>Receipt number:</strong> ${transaction.receiptNumber}</p><hr/><p>प्रिय विद्यार्थी,</p><p>तुमची फी यशस्वीरीत्या प्राप्त झाली आहे. <strong>${enrolledCourse.name}</strong> हा कोर्स आता तुमच्या खात्यात सक्रिय आहे.</p><p><strong>व्यवहार क्रमांक:</strong> ${transactionId}<br/><strong>पावती क्रमांक:</strong> ${transaction.receiptNumber}</p>${temporaryPassword ? `<hr/><p><strong>Login ID:</strong> ${student.email} or ${student.profile?.mobile || student.profile?.phone}<br/><strong>Temporary password:</strong> ${temporaryPassword}</p><p>Please sign in and change this password immediately.</p>` : ''}<p>Your payment receipt is attached. / तुमची पावती जोडलेली आहे.</p>`,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
         attachments: [{ filename: `${transaction.receiptNumber}.pdf`, content: receiptPdf, contentType: 'application/pdf' }],
       });
       if (delivery?.skipped) throw new Error('Email delivery is not configured');
@@ -466,4 +496,4 @@ async function rejectPayment(paymentId, admin, reason, ip) {
   return intent;
 }
 
-module.exports = { createUpiPaymentIntent, createRazorpayQrPayment, createRazorpayCheckoutOrder, verifyRazorpayCheckoutPayment, markRazorpayCheckoutFailed, reconcileRazorpayPayment, processRazorpayWebhook, submitPaymentProof, getPaymentStatus, listAdminPayments, approvePayment, rejectPayment, isCompleteUpiId, normalizeUpiId, normalizeUtr, buildUpiUrl, PAYMENT_APPS };
+module.exports = { createUpiPaymentIntent, createRazorpayQrPayment, createRazorpayCheckoutOrder, verifyRazorpayCheckoutPayment, markRazorpayCheckoutFailed, reconcileRazorpayPayment, processRazorpayWebhook, submitPaymentProof, getPaymentStatus, listAdminPayments, approvePayment, rejectPayment, expireRazorpayQrPayments, isCompleteUpiId, normalizeUpiId, normalizeUtr, buildUpiUrl, PAYMENT_APPS };

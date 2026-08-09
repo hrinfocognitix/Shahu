@@ -19,6 +19,7 @@ const AppError = require('../utils/appError');
 const mongoose = require('mongoose');
 const { sendEmail } = require('../services/email.service');
 const { createReceiptPdf } = require('../services/receiptPdf.service');
+const { createPurchaseConfirmationEmail } = require('../services/purchaseEmail.service');
 const logger = require('../config/logger');
 const { isCompleteUpiId, normalizeUpiId } = require('../services/paymentIntent.service');
 
@@ -534,11 +535,13 @@ const verifyPurchase = asyncHandler(async (req, res) => {
       enrollment,
     });
     const transactionId = transaction.gatewayReference || transaction.transactionReference || transaction.purchaseId;
+    const purchaseEmail = createPurchaseConfirmationEmail({ student, course: transaction.course, transaction, enrollment, temporaryPassword });
     const delivery = await sendEmail({
       to: student.email,
       subject: `Payment successful — ${transaction.course.name} | Lokaraja Career Academy`,
       text: `Dear ${student.name || 'Student'},\n\nThank you for your purchase. Your payment was successful and ${transaction.course.name} is now active.\nTransaction ID: ${transactionId}\nReceipt number: ${transaction.receiptNumber}\n\nप्रिय विद्यार्थी,\nतुमची फी यशस्वीरीत्या प्राप्त झाली आहे. ${transaction.course.name} हा कोर्स आता तुमच्या खात्यात सक्रिय आहे.\nव्यवहार क्रमांक: ${transactionId}\nपावती क्रमांक: ${transaction.receiptNumber}${temporaryPassword ? `\n\nTemporary password: ${temporaryPassword}\nPlease sign in and change it immediately.` : ''}\n\nYour payment receipt is attached. / तुमची पावती जोडलेली आहे.`,
       html: `<p>Dear ${student.name || 'Student'},</p><p>Thank you for your purchase. Your payment was successful and <strong>${transaction.course.name}</strong> is now active.</p><p><strong>Transaction ID:</strong> ${transactionId}<br/><strong>Receipt number:</strong> ${transaction.receiptNumber}</p><hr/><p>प्रिय विद्यार्थी,</p><p>तुमची फी यशस्वीरीत्या प्राप्त झाली आहे. <strong>${transaction.course.name}</strong> हा कोर्स आता तुमच्या खात्यात सक्रिय आहे.</p><p><strong>व्यवहार क्रमांक:</strong> ${transactionId}<br/><strong>पावती क्रमांक:</strong> ${transaction.receiptNumber}</p>${temporaryPassword ? `<hr/><p><strong>Temporary password:</strong> ${temporaryPassword}</p><p>Please sign in and change this password immediately.</p>` : ''}<p>Your payment receipt is attached. / तुमची पावती जोडलेली आहे.</p>`,
+      ...purchaseEmail,
       attachments: [
         {
           filename: `${transaction.receiptNumber}.pdf`,
