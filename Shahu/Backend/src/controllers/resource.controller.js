@@ -8,6 +8,7 @@ function resourceController(
   {
     populate = '',
     beforeList,
+    afterList,
     canRead,
     beforeCreate,
     beforeUpdate,
@@ -26,7 +27,8 @@ function resourceController(
         populate,
         accessFilter
       );
-      return apiResponse.success(res, { message: 'Resources fetched', data: items, meta });
+      const data = afterList ? await afterList(items, req) : items;
+      return apiResponse.success(res, { message: 'Resources fetched', data, meta });
     }),
     get: asyncHandler(async (req, res) => {
       const item = await resourceService.getById(Model, req.params.id, populate);

@@ -83,6 +83,22 @@ const canReadStudentCourse = async (request, item) => {
     })
   );
 };
+const addCourseEnrollmentCounts = async (courses) => {
+  const courseIds = courses.map((course) => course._id).filter(Boolean);
+  if (!courseIds.length) return courses;
+  const counts = await Enrollment.aggregate([
+    { $match: { course: { $in: courseIds } } },
+    { $group: { _id: '$course', students: { $addToSet: '$student' }, activeStudents: { $addToSet: { $cond: [{ $eq: ['$status', 'active'] }, '$student', null] } } } },
+  ]);
+  const byCourse = new Map(counts.map((item) => [String(item._id), {
+    purchasedStudentCount: item.students.filter(Boolean).length,
+    activeEnrollmentCount: item.activeStudents.filter(Boolean).length,
+  }]));
+  return courses.map((course) => {
+    const value = course.toObject ? course.toObject() : course;
+    return { ...value, ...(byCourse.get(String(course._id)) || { purchasedStudentCount: 0, activeEnrollmentCount: 0 }) };
+  });
+};
 const validateLiveLecture = (body) => {
   const scheduledAt = new Date(body.scheduledAt);
   if (!body.scheduledAt || Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date()) {
@@ -427,6 +443,7 @@ module.exports = [
     createResourceRouter(
       resourceController(Course, {
         populate: 'subjects subjectDetails.subject',
+        afterList: addCourseEnrollmentCounts,
         beforeCreate: createCoursePayload,
         afterCreate: (course) => sendNewCoursePush(course),
         beforeUpdate: updateCoursePayload,

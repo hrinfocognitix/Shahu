@@ -588,6 +588,7 @@ a {
 .purchase-actions button.danger:hover:not(:disabled) { border-color: #a93f3f; background: #a93f3f; }
 .student-empty { padding: 1.3rem; color: var(--text-secondary); }
 .status-pill.pending { color: #815c16; background: #fff1cf; }
+.status-pill.inactive { color: #667085; background: #eaecf0; }
 
 /* Faculty management follows the same accessible portal theme as Students. */
 .faculty-management { color: var(--text-primary); font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }

@@ -230,6 +230,9 @@ export function Management({ resource }) {
   };
 
   const beginEdit = (item) => {
+    if (isCourse && Number(item.purchasedStudentCount || 0) > 0) {
+      toast.info(`This course has ${item.purchasedStudentCount} purchased student${Number(item.purchasedStudentCount) === 1 ? '' : 's'} (${item.activeEnrollmentCount || 0} active). You can update course details, but keep enrolled students and learning content in mind.`);
+    }
     setEditing(item);
     if (isCourse) {
       setForm({
@@ -453,6 +456,12 @@ export function Management({ resource }) {
   };
 
   const remove = async (item) => {
+    const purchasedStudents = Number(item.purchasedStudentCount || 0);
+    if (isCourse && purchasedStudents > 0) {
+      const activeStudents = Number(item.activeEnrollmentCount || 0);
+      const proceed = window.confirm(`This course has ${purchasedStudents} purchased student${purchasedStudents === 1 ? '' : 's'} (${activeStudents} active). Active enrollments cannot be deleted. Do you still want to continue to the delete check?`);
+      if (!proceed) return;
+    }
     const reason = isCourse
       ? window.prompt('Why are you deleting this course?')
       : 'Deleted from admin panel';
@@ -578,6 +587,7 @@ export function Management({ resource }) {
                         <> · Original ₹{Number(item.actualPrice).toLocaleString('en-IN')}</>
                       ) : null}
                     </small>
+                    <small className="course-list-meta">{Number(item.purchasedStudentCount || 0)} purchased user{Number(item.purchasedStudentCount || 0) === 1 ? '' : 's'} · {Number(item.activeEnrollmentCount || 0)} active enrollment{Number(item.activeEnrollmentCount || 0) === 1 ? '' : 's'}</small>
                     {item.priceHistory?.length ? (
                       <details className="course-price-history">
                         <summary>Price update history ({item.priceHistory.length})</summary>
@@ -595,7 +605,9 @@ export function Management({ resource }) {
                   </>
                 )}
               </div>
-              <span className="status-pill">{item.status || 'active'}</span>
+              <span className={`status-pill ${isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : String(item.status || 'active').toLowerCase()}`}>
+                {isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'Disabled course' : item.status || 'active'}
+              </span>
               {!isPurchases && (
                 <div className="row-actions">
                   {isCourse ? (
