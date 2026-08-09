@@ -34,8 +34,8 @@ const ensureDefaultCoursePoster = async () => {
       <rect width="1024" height="1536" fill="url(#background)"/>
       <circle cx="900" cy="170" r="260" fill="#f4b942" fill-opacity=".17"/>
       <circle cx="80" cy="1360" r="300" fill="#ffffff" fill-opacity=".08"/>
-      <text x="512" y="660" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="76" font-weight="700">SHAHU</text>
-      <text x="512" y="750" text-anchor="middle" fill="#f7d26a" font-family="Arial, sans-serif" font-size="64" font-weight="700">ACADEMY</text>
+      <text x="512" y="660" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="76" font-weight="700">GS BY</text>
+      <text x="512" y="750" text-anchor="middle" fill="#f7d26a" font-family="Arial, sans-serif" font-size="64" font-weight="700">ANAND SIR</text>
       <rect x="330" y="805" width="364" height="4" rx="2" fill="#f7d26a"/>
       <text x="512" y="880" text-anchor="middle" fill="#e7f5f4" font-family="Arial, sans-serif" font-size="30">LEARN • GROW • ACHIEVE</text>
     </svg>`;

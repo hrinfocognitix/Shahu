@@ -59,10 +59,10 @@ export function Sidebar() {
   return (
     <aside className={`sidebar ${open ? 'open' : 'collapsed'}`}>
       <div className="sidebar-brand">
-        <img src={founderLogo} alt="Lokaraja Career Academy" />
+        <img src={founderLogo} alt="GS BY Anand Sir" />
         <div>
-          <h1>लोकराजा</h1>
-          <span>करिअर अकादमी, थिकपुर्ली</span>
+          <h1>GS BY</h1>
+          <span>Anand Sir</span>
         </div>
       </div>
       <p className="sidebar-role">{t('workspace', { role: user?.role || 'admin' })}</p>

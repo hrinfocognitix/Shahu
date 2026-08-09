@@ -75,7 +75,7 @@ export function Dashboard() {
     >
       <div className="dashboard-welcome">
         <div>
-          <p className="dashboard-kicker">LOKARAJA CAREER ACADEMY</p>
+          <p className="dashboard-kicker">GS BY ANAND SIR</p>
           <h1>Good day, Administrator.</h1>
           <span>Here’s a clear view of your academy, learning resources, and daily progress.</span>
         </div>

@@ -76,7 +76,7 @@ export function CourseDetail() {
         key: order.keyId,
         amount: order.amount,
         currency: order.currency,
-        name: 'Lokaraja Career Academy',
+        name: 'GS BY Anand Sir',
         description: order.courseName || 'Course Payment',
         order_id: order.order_id,
         prefill: { name: buyer.name, email: buyer.email, contact: buyer.mobileNo },

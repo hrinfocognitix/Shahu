@@ -67,7 +67,7 @@ const fallbackCourses = [
 ];
 
 const homeText = {
-  en: { home: 'Home', about: 'About', courses: 'Courses', teachers: 'Teachers', gallery: 'Gallery', exams: 'Online Exams', materials: 'Study Materials', contact: 'Contact', login: 'Login', academyWall: 'Academy wall', achievements: 'Achievement highlights', featured: 'Featured highlight', programs: 'Our programs', availableCourses: 'Available courses', viewProgram: 'View program', explore: 'Explore our courses', begin: 'A place to begin', ambition: 'Ambition deserves a clear path.', intro: 'Lokaraja Career Academy helps learners turn effort into progress through rigorous teaching, personal mentorship and a study ecosystem built for consistency.', trust: 'years of trust', guided: 'learners guided', satisfaction: 'satisfaction', director: 'A note from our director', quote: '“The right guidance can transform a student’s confidence into achievement.”', mentors: 'Our mentors', mentorsTitle: 'Teachers who stay invested.', academyLife: 'Life at Lokaraja', moments: 'Moments that make progress visible.', upcoming: 'Upcoming online exam', assessment: 'Monthly practice assessment', examCopy: 'Test your preparation, receive insight and know exactly what to do next.', openExam: 'Open exam portal', informed: 'Stay informed', latest: 'Latest announcements', news: ['Admissions for the new MPSC batch are now open.', 'Weekly current-affairs workshop this Saturday.', 'New study materials are available in the portal.'], contactUs: 'Contact us', contactTitle: 'Let’s build your next success story.', address: 'Thikpurli, Maharashtra', maps: 'Open in Google Maps', rights: 'All rights reserved.' },
+  en: { home: 'Home', about: 'About', courses: 'Courses', teachers: 'Teachers', gallery: 'Gallery', exams: 'Online Exams', materials: 'Study Materials', contact: 'Contact', login: 'Login', academyWall: 'Academy wall', achievements: 'Achievement highlights', featured: 'Featured highlight', programs: 'Our programs', availableCourses: 'Available courses', viewProgram: 'View program', explore: 'Explore our courses', begin: 'A place to begin', ambition: 'Ambition deserves a clear path.', intro: 'GS BY Anand Sir helps learners turn effort into progress through rigorous teaching, personal mentorship and a study ecosystem built for consistency.', trust: 'years of trust', guided: 'learners guided', satisfaction: 'satisfaction', director: 'A note from our director', quote: '“The right guidance can transform a student’s confidence into achievement.”', mentors: 'Our mentors', mentorsTitle: 'Teachers who stay invested.', academyLife: 'Life at GS BY Anand Sir', moments: 'Moments that make progress visible.', upcoming: 'Upcoming online exam', assessment: 'Monthly practice assessment', examCopy: 'Test your preparation, receive insight and know exactly what to do next.', openExam: 'Open exam portal', informed: 'Stay informed', latest: 'Latest announcements', news: ['Admissions for the new MPSC batch are now open.', 'Weekly current-affairs workshop this Saturday.', 'New study materials are available in the portal.'], contactUs: 'Contact us', contactTitle: 'Let’s build your next success story.', address: 'Thikpurli, Maharashtra', maps: 'Open in Google Maps', rights: 'All rights reserved.' },
   mr: { home: 'मुख्यपृष्ठ', about: 'आमच्याबद्दल', courses: 'कोर्स', teachers: 'शिक्षक', gallery: 'गॅलरी', exams: 'ऑनलाइन परीक्षा', materials: 'अभ्यास साहित्य', contact: 'संपर्क', login: 'लॉगिन', academyWall: 'अकादमी वॉल', achievements: 'यशोगाथा', featured: 'विशेष यश', programs: 'आमचे कोर्स', availableCourses: 'उपलब्ध कोर्स', viewProgram: 'कोर्स पहा', explore: 'आमचे कोर्स पहा', begin: 'सुरुवातीचे योग्य ठिकाण', ambition: 'महत्त्वाकांक्षेला स्पष्ट दिशा हवी.', intro: 'लोकराजा करिअर अकादमी कठोर अध्यापन, वैयक्तिक मार्गदर्शन आणि सातत्यपूर्ण अभ्यास व्यवस्थेद्वारे विद्यार्थ्यांच्या प्रयत्नांना प्रगतीत बदलते.', trust: 'वर्षांचा विश्वास', guided: 'विद्यार्थ्यांना मार्गदर्शन', satisfaction: 'समाधान', director: 'संचालकांचा संदेश', quote: '“योग्य मार्गदर्शन विद्यार्थ्याचा आत्मविश्वास यशात बदलू शकते.”', mentors: 'आमचे मार्गदर्शक', mentorsTitle: 'विद्यार्थ्यांसोबत कायम उभे राहणारे शिक्षक.', academyLife: 'लोकराजामधील क्षण', moments: 'प्रगती दर्शवणारे अविस्मरणीय क्षण.', upcoming: 'आगामी ऑनलाइन परीक्षा', assessment: 'मासिक सराव चाचणी', examCopy: 'तुमच्या तयारीची चाचणी घ्या, विश्लेषण मिळवा आणि पुढील दिशा ठरवा.', openExam: 'परीक्षा पोर्टल उघडा', informed: 'अपडेट रहा', latest: 'नवीन सूचना', news: ['नवीन MPSC बॅचसाठी प्रवेश सुरू आहेत.', 'या शनिवारी साप्ताहिक चालू घडामोडी कार्यशाळा.', 'पोर्टलमध्ये नवीन अभ्यास साहित्य उपलब्ध आहे.'], contactUs: 'आमच्याशी संपर्क', contactTitle: 'तुमच्या पुढील यशाची सुरुवात करूया.', address: 'थिकपुर्ली, महाराष्ट्र', maps: 'Google Maps मध्ये उघडा', rights: 'सर्व हक्क राखीव.' }
 };
 
@@ -172,9 +172,9 @@ export function Home() {
     <main className="lokaraja">
       <header className="lokaraja-nav">
         <Link to="/" className="lokaraja-brand">
-          <img className="brand-logo" src={founderLogo} alt="Lokaraja Career Academy" />
+          <img className="brand-logo" src={founderLogo} alt="GS BY Anand Sir" />
           <span>
-            Lokaraja <small>Career Academy</small>
+            GS BY <small>Anand Sir</small>
           </span>
         </Link>
         <nav>
@@ -208,7 +208,7 @@ export function Home() {
             animate={{ opacity: index === heroCurrent ? 1 : 0, scale: index === heroCurrent ? 1 : 1.04 }}
             transition={{ duration: 0.8 }}
             aria-hidden={index !== heroCurrent}>
-            <img src={slide.resourceUrl} alt={slide.title || 'Lokaraja academy students'} loading={index ? 'lazy' : 'eager'} />
+            <img src={slide.resourceUrl} alt={slide.title || 'GS BY Anand Sir students'} loading={index ? 'lazy' : 'eager'} />
             <div className="hero-shade" />
           </motion.div>
         ))}
@@ -219,7 +219,7 @@ export function Home() {
           <motion.h1 key={`title-${heroCurrent}`} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}>
             {heroSlides[heroCurrent]?.title || 'Learn with purpose.'}
           </motion.h1>
-          <span>{heroSlides[heroCurrent]?.description || 'Lokaraja Career Academy, Thikpurli'}</span>
+          <span>{heroSlides[heroCurrent]?.description || 'GS BY Anand Sir, Thikpurli'}</span>
           <button className="btn hero-button" onClick={() => jump('courses')}>
             {text.explore} <FiArrowRight />
           </button>
@@ -366,13 +366,13 @@ export function Home() {
 
       <section className="director-section">
         <div className="director-art">
-          <img src={founderLogo} alt="Lokaraja Career Academy founder" />
+          <img src={founderLogo} alt="GS BY Anand Sir" />
         </div>
         <div>
           <p className="eyebrow">{text.director}</p>
           <h2>{text.quote}</h2>
           <p>Every learner comes with a different story. Our job is to make their next chapter stronger, calmer and full of possibility.</p>
-          <strong>— Director, Lokaraja Career Academy</strong>
+          <strong>— GS BY Anand Sir</strong>
         </div>
       </section>
 
@@ -440,7 +440,7 @@ export function Home() {
           </p>
         </div>
         <div className="map-card">
-          <span>Lokaraja Career Academy</span>
+          <span>GS BY Anand Sir</span>
           <small>{text.address}</small>
           <a href="https://maps.google.com/?q=Thikpurli,Maharashtra" target="_blank" rel="noreferrer">
             {text.maps} <FiArrowRight />
@@ -450,13 +450,13 @@ export function Home() {
 
       <footer>
         <div className="lokaraja-brand">
-          <img className="brand-logo" src={founderLogo} alt="Lokaraja Career Academy" />
+          <img className="brand-logo" src={founderLogo} alt="GS BY Anand Sir" />
           <span>
-            Lokaraja <small>Career Academy</small>
+            GS BY <small>Anand Sir</small>
           </span>
         </div>
         <p>लोकराजा करिअर अकादमी, थिकपुर्ली</p>
-        <small>© {new Date().getFullYear()} Lokaraja Career Academy. {text.rights}</small>
+        <small>© {new Date().getFullYear()} GS BY Anand Sir. {text.rights}</small>
       </footer>
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
     </main>
