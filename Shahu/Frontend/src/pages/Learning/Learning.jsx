@@ -141,6 +141,15 @@ export function Learning() {
 
   // Before a course exists, only the subject-level syllabus is available.
   const documentTypes = course ? selectedTypes : selectedTypes.filter((type) => type === 'syllabus');
+  const selectedCourseName = useMemo(
+    () => courses.find((item) => item._id === course)?.name || 'Selected course',
+    [course, courses],
+  );
+  const selectedSubjectName = useMemo(
+    () => subjects.find((item) => item._id === subject)?.name || 'Selected subject',
+    [subject, subjects],
+  );
+  const materialDestination = `${selectedCourseName} · ${selectedSubjectName}`;
   const savedNoteCount = useMemo(
     () => items.filter((item) => item.materialType === 'notes').length,
     [items],
@@ -566,6 +575,7 @@ export function Learning() {
         <div className="learning-layout">
           <aside>
             {!course ? <div className="card student-empty">You are adding a subject-level syllabus. It will automatically appear after this subject is assigned to a course.</div> : null}
+            {course ? <div className="card student-empty"><strong>Save material for</strong><br />{materialDestination}<br /><small>Select a material type, complete its form, and use its Save button below.</small></div> : null}
             {selectedTypes.includes('notes') ? (
               <form className="notes-upload-form material-panel material-panel--notes" onSubmit={uploadNotes}>
                 <div className="notes-upload-heading">
@@ -589,7 +599,7 @@ export function Learning() {
                     <input accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp" onChange={(event) => updateNoteEntry(entry.id, 'file', event.target.files?.[0] || null)} required type="file" />
                   </section>
                 ))}
-                <button className="btn btn-primary">Save all notes</button>
+                <button className="btn btn-primary">Save notes for selected course</button>
               </form>
             ) : null}
             {selectedTypes.includes('generated-questions') ? (
@@ -615,7 +625,7 @@ export function Learning() {
                     <input accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp" onChange={(event) => updateQuestionEntry(entry.id, 'file', event.target.files?.[0] || null)} required type="file" />
                   </section>
                 ))}
-                <button className="btn btn-primary">Save all generated questions</button>
+                <button className="btn btn-primary">Save questions for selected course</button>
               </form>
             ) : null}
             {selectedTypes.includes('question-paper') ? (
@@ -641,7 +651,7 @@ export function Learning() {
                     <input accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp" onChange={(event) => updateQuestionPaperEntry(entry.id, 'file', event.target.files?.[0] || null)} required type="file" />
                   </section>
                 ))}
-                <button className="btn btn-primary">Save all old question papers</button>
+                <button className="btn btn-primary">Save old papers for selected course</button>
               </form>
             ) : null}
             {selectedTypes.includes('mock-test') ? (
@@ -651,7 +661,7 @@ export function Learning() {
                 <input key={mockTestPreview ? 'imported' : 'choose'} onChange={(event) => { setMockTestFile(event.target.files?.[0] || null); setMockTestPreview(null); }} type="file" />
                 <small>{mockTestFile?.name || 'Choose the Excel file from your Mac.'}</small>
                 {mockTestLoading ? <small>Large workbooks can take several minutes. Please keep this page open.</small> : null}
-                {!mockTestPreview ? <button className="btn btn-primary" disabled={mockTestLoading}>{mockTestLoading ? 'Validating…' : 'Validate Mock Test'}</button> : <div className="mock-test-preview"><b>{mockTestPreview.validRows} valid · {mockTestPreview.invalidRows} rejected</b>{mockTestPreview.invalidRows ? <ul>{mockTestPreview.rows.filter((row) => !row.valid).slice(0, 5).map((row) => <li key={row.rowNumber}>Row {row.rowNumber}: {row.validationErrors.join(', ')}</li>)}</ul> : null}<button className="btn btn-primary" disabled={mockTestLoading} onClick={importMockTest} type="button">{mockTestLoading ? 'Importing questions…' : 'Import valid questions'}</button></div>}
+                {!mockTestPreview ? <button className="btn btn-primary" disabled={mockTestLoading}>{mockTestLoading ? 'Validating…' : 'Validate Mock Test for selected course'}</button> : <div className="mock-test-preview"><b>{mockTestPreview.validRows} valid · {mockTestPreview.invalidRows} rejected</b>{mockTestPreview.invalidRows ? <ul>{mockTestPreview.rows.filter((row) => !row.valid).slice(0, 5).map((row) => <li key={row.rowNumber}>Row {row.rowNumber}: {row.validationErrors.join(', ')}</li>)}</ul> : null}<button className="btn btn-primary" disabled={mockTestLoading} onClick={importMockTest} type="button">{mockTestLoading ? 'Importing questions…' : 'Save valid mock-test questions'}</button></div>}
               </form>
             ) : null}
             {documentTypes.map((type) => {
@@ -672,7 +682,7 @@ export function Learning() {
                     type="file"
                   />
                   <small>PDF, DOC, DOCX, JPG, PNG, and WEBP files are supported.</small>
-                  <button className="btn btn-primary">Save {label}</button>
+                  <button className="btn btn-primary">Save {label}{course ? ' for selected course' : ' for selected subject'}</button>
                 </form>
               );
             })}
