@@ -41,7 +41,7 @@ export function SystemData() {
   const expected = action === 'course' ? 'DELETE COURSE' : action === 'student' ? 'DELETE STUDENT' : 'DELETE ALL ACADEMY DATA';
   const remove = async () => {
     if ((action === 'course' && !courseId) || (action === 'student' && !studentId)) return toast.error(`Select a ${action} first.`);
-    if (confirmation !== expected) return toast.error(`Type ${expected} exactly to continue.`);
+    if (String(confirmation || '').trim().replace(/\s+/g, ' ').toUpperCase() !== expected) return toast.error(`Type ${expected} to continue.`);
     setDeleting(true);
     try {
       const path = action === 'course' ? `/system-data/courses/${courseId}` : action === 'student' ? `/system-data/students/${studentId}` : '/system-data/all';

@@ -103,7 +103,7 @@ export function Students() {
   const permanentlyDeleteStudent = async () => {
     if (!details?.student?._id) return;
     const confirmation = window.prompt(`This permanently deletes ${details.student.name}, their enrollments, payments, attempts, notifications, and devices. Type DELETE STUDENT to continue.`);
-    if (confirmation !== 'DELETE STUDENT') return toast.error('Student was not deleted. Type DELETE STUDENT exactly to confirm.');
+    if (String(confirmation || '').trim().replace(/\s+/g, ' ').toUpperCase() !== 'DELETE STUDENT') return toast.error('Student was not deleted. Type DELETE STUDENT to confirm.');
     try {
       const response = await apiClient.delete(`/system-data/students/${details.student._id}`, { data: { confirmation } });
       toast.success(response.data.message || 'Student permanently deleted.');

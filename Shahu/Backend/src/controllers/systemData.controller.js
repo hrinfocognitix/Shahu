@@ -80,7 +80,7 @@ const dataSummary = asyncHandler(async (req, res) => {
 });
 
 const requireConfirmation = (value, expected) => {
-  if (String(value || '').trim() !== expected) throw new AppError(`Type ${expected} to confirm this permanent action`, 400);
+  if (String(value || '').trim().replace(/\s+/g, ' ').toUpperCase() !== expected) throw new AppError(`Type ${expected} to confirm this permanent action`, 400);
 };
 
 const deleteCourse = asyncHandler(async (req, res) => {
