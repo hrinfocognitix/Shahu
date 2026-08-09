@@ -7,8 +7,10 @@ const startCronJobs = require('./cron');
 const initSocket = require('./sockets');
 const { ensureDefaultAdmin } = require('./services/adminSeed.service');
 const { allowDuplicateSubjectNames } = require('./services/subjectIndex.service');
+const { ensureDefaultCoursePoster } = require('./config/storage');
 
 async function bootstrap() {
+  await ensureDefaultCoursePoster();
   await connectDB();
   await ensureDefaultAdmin();
   await allowDuplicateSubjectNames();
