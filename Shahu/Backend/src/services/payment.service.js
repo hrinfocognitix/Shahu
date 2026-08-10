@@ -44,7 +44,9 @@ async function fetchQr(qrId) {
 }
 
 async function fetchQrPayments(qrId) {
-  return requireRazorpayClient().qrCode.fetchPayments(qrId);
+  // Razorpay's Node SDK names the QR-specific payments endpoint
+  // `fetchAllPayments` (GET /payments/qr_codes/:id/payments).
+  return requireRazorpayClient().qrCode.fetchAllPayments(qrId);
 }
 
 async function closeQr(qrId) {
