@@ -77,10 +77,22 @@ export function setupInterceptors() {
         /course plan has expired|not active/i.test(error.response?.data?.message || '');
       if ((status === 401 || expiredPlan) && !originalRequest?._sessionEnded) {
         originalRequest._sessionEnded = true;
+        const failedPath = originalRequest?.url || 'the academy server';
+        // Show the exact API path before clearing the session. This makes an
+        // unexpected admin logout diagnosable without opening browser tools.
+        console.error('Session ended after API authorization failure', {
+          status,
+          path: failedPath,
+          message: error.response?.data?.message,
+        });
         endSession();
         if (expiredPlan)
           toast.error('Your course validity has ended. Please renew your plan.', {
             autoClose: 7000,
+          });
+        else
+          toast.error(`Your login session was rejected while opening ${failedPath}. Please log in again.`, {
+            autoClose: 8000,
           });
         window.location.assign('/login');
       }

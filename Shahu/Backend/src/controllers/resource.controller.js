@@ -41,7 +41,22 @@ function resourceController(
     }),
     create: asyncHandler(async (req, res) => {
       const payload = beforeCreate ? await beforeCreate(req) : req.body;
+      logger.info('Resource create request authorized', {
+        requestId: req.requestId,
+        resource: Model.modelName,
+        contentType: payload.type,
+        title: payload.title,
+        userId: String(req.user?._id || ''),
+        role: req.user?.role,
+      });
       const item = await resourceService.create(Model, payload, req.user?._id);
+      logger.info('Resource create request completed', {
+        requestId: req.requestId,
+        resource: Model.modelName,
+        contentType: item.type,
+        recordId: String(item._id),
+        userId: String(req.user?._id || ''),
+      });
       // Side effects (for example FCM) must never make a successfully-created
       // resource fail for the administrator.
       if (afterCreate) {

@@ -3,6 +3,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const apiResponse = require('../utils/apiResponse');
 const { MESSAGES } = require('../constants/messages');
 const { uploadBuffer } = require('../services/cloudinary.service');
+const logger = require('../config/logger');
 
 const health = asyncHandler(async (req, res) =>
   apiResponse.success(res, { message: MESSAGES.HEALTH_OK, data: { uptime: process.uptime(), timestamp: new Date().toISOString() } })
@@ -22,7 +23,21 @@ const uploadFile = asyncHandler(async (req, res) => {
       throw error;
     }
   }
+  logger.info('Upload endpoint received file', {
+    requestId: req.requestId,
+    userId: String(req.user?._id || ''),
+    role: req.user?.role,
+    filename: req.file.originalname,
+    mimeType: req.file.mimetype,
+    size: req.file.size,
+  });
   const result = await uploadBuffer(req.file, { folder: 'shahu-academy/common' });
+  logger.info('Upload endpoint stored file in Cloudinary', {
+    requestId: req.requestId,
+    userId: String(req.user?._id || ''),
+    publicId: result.public_id,
+    resourceType: result.resource_type,
+  });
   return apiResponse.success(res, {
     message: 'File uploaded',
     data: {
