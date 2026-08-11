@@ -271,6 +271,9 @@ const listLearningFiles = asyncHandler(async (req, res) => {
     value.downloadUrl = `${req.baseUrl}/files/${item._id}/download?token=${encodeURIComponent(token)}`;
     value.previewUrl = `${req.baseUrl}/files/${item._id}/preview?token=${encodeURIComponent(token)}`;
     value.previewMimeType = OFFICE_MIME_TYPES.has(item.mimeType) ? 'application/pdf' : item.mimeType;
+    // Mobile opens Cloudinary-hosted images/PDFs directly in its native
+    // viewer. The signed URLs remain available for legacy and download flows.
+    value.cloudinaryUrl = value.fileUrl?.startsWith('https://') ? value.fileUrl : undefined;
     delete value.fileUrl;
     delete value.storedFilename;
     return value;
