@@ -78,13 +78,19 @@ export function setupInterceptors() {
       if ((status === 401 || expiredPlan) && !originalRequest?._sessionEnded) {
         originalRequest._sessionEnded = true;
         const failedPath = originalRequest?.url || 'the academy server';
+        const serverMessage = error.response?.data?.message || 'No error message was returned by the server.';
         // Show the exact API path before clearing the session. This makes an
         // unexpected admin logout diagnosable without opening browser tools.
         console.error('Session ended after API authorization failure', {
           status,
           path: failedPath,
-          message: error.response?.data?.message,
+          message: serverMessage,
         });
+        // A toast is destroyed by the redirect below. Keep this blocking alert
+        // visible so an administrator can report the exact failure.
+        window.alert(
+          `Login problem\n\nRequest: ${failedPath}\nStatus: ${status}\nServer message: ${serverMessage}\n\nPlease send this message to support.`
+        );
         endSession();
         if (expiredPlan)
           toast.error('Your course validity has ended. Please renew your plan.', {
