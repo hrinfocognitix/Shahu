@@ -1,4 +1,5 @@
 const { cloudinary, isConfigured } = require('../config/cloudinary');
+const logger = require('../config/logger');
 
 function requireConfiguration() {
   if (!isConfigured()) {
@@ -15,10 +16,35 @@ function uploadBuffer(file, { folder = 'shahu-academy' } = {}) {
     error.statusCode = 400;
     throw error;
   }
+  const imageUpload = file.mimetype?.startsWith('image/');
+  const metadata = {
+    originalFilename: file.originalname,
+    mimeType: file.mimetype,
+    size: file.size || file.buffer.length,
+    folder,
+  };
+  if (imageUpload) logger.info('Image upload started', metadata);
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       { folder, resource_type: 'auto', use_filename: false },
-      (error, result) => error ? reject(error) : resolve(result)
+      (error, result) => {
+        if (!error) {
+          if (imageUpload) {
+            logger.info('Image upload completed', {
+              ...metadata,
+              publicId: result.public_id,
+              resourceType: result.resource_type,
+              bytes: result.bytes,
+            });
+          }
+          return resolve(result);
+        }
+        // Cloudinary errors use http_code instead of Express's statusCode.
+        error.statusCode = error.http_code || 502;
+        error.message = `Cloudinary upload failed: ${error.message || 'Unknown Cloudinary error'}`;
+        if (imageUpload) logger.error('Image upload failed', { ...metadata, statusCode: error.statusCode, error: error.message });
+        return reject(error);
+      }
     );
     stream.end(file.buffer);
   });
