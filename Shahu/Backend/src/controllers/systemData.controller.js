@@ -1,11 +1,9 @@
 const mongoose = require('mongoose');
-const fs = require('fs/promises');
-const path = require('path');
 const asyncHandler = require('../utils/asyncHandler');
 const apiResponse = require('../utils/apiResponse');
 const AppError = require('../utils/appError');
 const logger = require('../config/logger');
-const { uploadDir } = require('../config/storage');
+const { destroyAsset } = require('../services/cloudinary.service');
 
 const Course = require('../models/Course');
 const User = require('../models/User');
@@ -49,10 +47,17 @@ const bytes = (value = 0) => {
 };
 
 const deleteKnownUploadFiles = async (files) => {
-  await Promise.all(files.map(async (file) => {
-    if (!file.storedFilename) return;
-    const target = path.join(uploadDir, path.basename(file.storedFilename));
-    try { await fs.unlink(target); } catch (error) { if (error.code !== 'ENOENT') logger.warn('Unable to remove learning upload during system cleanup', { file: file.storedFilename, error: error.message }); }
+  const assets = new Map();
+  files.forEach((file) => {
+    if (file.publicId) assets.set(file.publicId, file.cloudinaryResourceType || 'image');
+  });
+  await Promise.all([...assets].map(async ([publicId, resourceType]) => {
+    // A learning file can be imported into another course while referencing
+    // the same Cloudinary object. Keep that shared object until its last DB
+    // reference has gone.
+    if (await LearningFile.exists({ publicId })) return;
+    try { await destroyAsset(publicId, resourceType); }
+    catch (error) { logger.warn('Unable to remove Cloudinary asset during system cleanup', { publicId, error: error.message }); }
   }));
 };
 
@@ -87,7 +92,7 @@ const deleteCourse = asyncHandler(async (req, res) => {
   requireConfirmation(req.body.confirmation, 'DELETE COURSE');
   const course = await Course.findById(req.params.id);
   if (!course) throw new AppError('Course not found', 404);
-  const files = await LearningFile.find({ course: course._id }).select('storedFilename');
+  const files = await LearningFile.find({ course: course._id }).select('publicId cloudinaryResourceType');
   const imports = await QuestionImport.find({ course: course._id }).select('_id');
   const importIds = imports.map((item) => item._id);
   const subjectIds = (course.subjects || []).map((item) => item._id || item);
@@ -126,7 +131,11 @@ const deleteStudent = asyncHandler(async (req, res) => {
 
 const clearAcademyData = asyncHandler(async (req, res) => {
   requireConfirmation(req.body.confirmation, 'DELETE ALL ACADEMY DATA');
-  const files = await LearningFile.find({}).select('storedFilename');
+  const [files, imports, splashes] = await Promise.all([
+    LearningFile.find({}).select('publicId cloudinaryResourceType'),
+    QuestionImport.find({}).select('publicId cloudinaryResourceType'),
+    SplashScreen.find({}).select('publicId cloudinaryResourceType'),
+  ]);
   // Preserve administrator/superadmin access so the portal remains usable after cleanup.
   const protectedUsers = { role: { $in: ['admin', 'superadmin'] } };
   const results = await Promise.all(models.map((Model) => {
@@ -134,7 +143,7 @@ const clearAcademyData = asyncHandler(async (req, res) => {
     if (Model === User) return Model.collection.deleteMany({ role: { $nin: ['admin', 'superadmin'] } });
     return Model.collection.deleteMany(filter);
   }));
-  await deleteKnownUploadFiles(files);
+  await deleteKnownUploadFiles([...files, ...imports, ...splashes]);
   const deletedCount = results.reduce((total, item) => total + (item.deletedCount || 0), 0);
   await AuditLog.collection.insertOne({ user: req.user._id, role: req.user.role, action: 'system_all_academy_data_cleared', module: 'system-data', newValue: { deletedCount, preserved: 'admin_and_superadmin_accounts' }, ipAddress: req.ip, createdAt: new Date(), updatedAt: new Date() });
   logger.warn('Superadmin cleared all academy data', { requestId: req.requestId, deletedCount, userId: String(req.user._id) });

@@ -20,6 +20,8 @@ const schema = new mongoose.Schema(
     originalFilename: { type: String, required: true },
     storedFilename: { type: String, required: true },
     fileUrl: { type: String, required: true },
+    publicId: { type: String, index: true },
+    cloudinaryResourceType: { type: String },
     mimeType: { type: String, required: true },
     fileSize: { type: Number, required: true },
     copiedFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'LearningFile', default: null },

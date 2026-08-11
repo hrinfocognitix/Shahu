@@ -2,7 +2,7 @@ require('dotenv').config({
   path: process.env.NODE_ENV === 'production' ? '.env.production' : '.env.local'
 });
 
-const requiredInProduction = ['MONGO_URI', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'OTP_HMAC_SECRET'];
+const requiredInProduction = ['MONGO_URI', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'OTP_HMAC_SECRET', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
 
 if (process.env.NODE_ENV === 'production') {
   requiredInProduction.forEach(key => {

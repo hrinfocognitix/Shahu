@@ -3,12 +3,10 @@ const asyncHandler = require('../utils/asyncHandler');
 const apiResponse = require('../utils/apiResponse');
 const AppError = require('../utils/appError');
 const { STATUS_CODES } = require('../constants/statusCodes');
-const fs = require('fs/promises');
-const path = require('path');
-const { uploadDir } = require('../config/storage');
+const { uploadBuffer, destroyAsset } = require('../services/cloudinary.service');
 const { sendNotificationPush } = require('../services/notification.service');
 
-const discardUpload = (req) => req.file?.path ? fs.unlink(req.file.path).catch(() => undefined) : Promise.resolve();
+const discardUpload = () => Promise.resolve();
 
 const active = asyncHandler(async (req, res) => {
   const now = new Date();
@@ -42,7 +40,8 @@ const create = asyncHandler(async (req, res) => {
       throw new AppError(`Select a valid ${mediaType} file`, STATUS_CODES.BAD_REQUEST);
     }
   }
-  const uploadedUrl = req.file ? `/uploads/${req.file.filename}` : undefined;
+  const upload = req.file ? await uploadBuffer(req.file, { folder: 'shahu-academy/splashes' }) : undefined;
+  const uploadedUrl = upload?.secure_url;
   const imageUrl = uploadedUrl || req.body.imageUrl;
   if (!imageUrl) throw new AppError('A splash image or video is required', STATUS_CODES.BAD_REQUEST);
   let item;
@@ -50,10 +49,10 @@ const create = asyncHandler(async (req, res) => {
     item = await SplashScreen.create({
       ...req.body, startsAt, endsAt, imageUrl,
       videoUrl: mediaType === 'video' ? uploadedUrl || req.body.videoUrl || imageUrl : undefined,
-      mediaType, createdBy: req.user._id
+      mediaType, publicId: upload?.public_id, cloudinaryResourceType: upload?.resource_type, createdBy: req.user._id
     });
   } catch (error) {
-    await discardUpload(req);
+    await destroyAsset(upload?.public_id, upload?.resource_type).catch(() => undefined);
     throw error;
   }
   // A festival splash and a manually uploaded splash use this same record.
@@ -82,17 +81,14 @@ const remove = asyncHandler(async (req, res) => {
     { new: true }
   );
   if (!item) throw new AppError('Splash screen not found', STATUS_CODES.NOT_FOUND);
+  await destroyAsset(item.publicId, item.cloudinaryResourceType).catch(() => undefined);
   return apiResponse.success(res, { message: 'Splash screen deleted' });
 });
 const permanentlyRemove = asyncHandler(async (req, res) => {
   const item = await SplashScreen.findOneAndDelete({ _id: req.params.id });
   if (!item) throw new AppError('Splash screen not found', STATUS_CODES.NOT_FOUND);
 
-  const mediaUrls = [...new Set([item.imageUrl, item.videoUrl].filter(Boolean))];
-  await Promise.all(mediaUrls.map(async (url) => {
-    if (!String(url).startsWith('/uploads/')) return;
-    await fs.unlink(path.join(uploadDir, path.basename(url))).catch(() => undefined);
-  }));
+  await destroyAsset(item.publicId, item.cloudinaryResourceType).catch(() => undefined);
   return apiResponse.success(res, { message: 'Splash screen permanently deleted' });
 });
 module.exports = { active, list, create, update, remove, permanentlyRemove };

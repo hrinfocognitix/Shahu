@@ -427,7 +427,10 @@ async function approvePayment(paymentId, admin, ip, options = {}) {
         idempotencyKey: `manual-intent:${locked._id}`, course: enrolledCourse._id, paymentAccount: locked.paymentAccount,
         student: student._id,
         buyer: { name: locked.buyer?.name || locked.email, email: locked.email, mobileNo: locked.buyer?.mobileNo || 'Not provided', deviceUuid: locked.buyer?.deviceUuid, age: locked.buyer?.age, education: locked.buyer?.education, address: locked.buyer?.address },
-        pricing: { payablePrice: locked.amount, paidAmount: locked.amount, payablePriceMinor: locked.amountMinor, paidAmountMinor: locked.amountMinor }, paymentMethod: `UPI - ${locked.paymentApp}`, gatewayReference: locked.utrNumber, submittedFrom: 'android', status: 'successful', paymentDate: locked.submittedAt, verifiedAt: new Date(), verifiedBy: admin._id, note: locked.userNote }], { session });
+        pricing: { payablePrice: locked.amount, paidAmount: locked.amount, payablePriceMinor: locked.amountMinor, paidAmountMinor: locked.amountMinor },
+        paymentMethod: locked.provider === 'razorpay' ? 'Razorpay' : `UPI - ${locked.paymentApp || 'Manual verification'}`,
+        gatewayReference: locked.provider === 'razorpay' ? locked.razorpay?.paymentId : locked.utrNumber,
+        submittedFrom: 'android', status: 'successful', paymentDate: locked.razorpay?.paidAt || locked.submittedAt || new Date(), verifiedAt: new Date(), verifiedBy: admin._id, note: locked.userNote }], { session });
       enrollment = await Enrollment.findOneAndUpdate({ student: student._id, course: enrolledCourse._id, status: 'active' },
         { $setOnInsert: { student: student._id, course: enrolledCourse._id, transaction: transaction._id, purchaseDate: now, validFrom: now, validUntil, validityDays, status: 'active', validityMode: 'automatic', createdBy: admin._id }, $set: { updatedBy: admin._id } },
         { upsert: true, returnDocument: 'after', runValidators: true, session });

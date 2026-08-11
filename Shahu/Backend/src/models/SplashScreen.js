@@ -5,6 +5,8 @@ const splashScreenSchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true },
     imageUrl: { type: String, required: true, trim: true },
     videoUrl: { type: String, trim: true },
+    publicId: { type: String, index: true },
+    cloudinaryResourceType: String,
     mediaType: { type: String, enum: ['image', 'video'], default: 'image' },
     startsAt: { type: Date, required: true },
     endsAt: { type: Date, required: true },

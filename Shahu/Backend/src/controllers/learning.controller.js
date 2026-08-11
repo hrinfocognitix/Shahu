@@ -23,7 +23,7 @@ const { execFile: executeFile } = require('child_process');
 const { promisify } = require('util');
 const env = require('../config/env');
 const logger = require('../config/logger');
-const { uploadDir } = require('../config/storage');
+const { uploadBuffer, destroyAsset } = require('../services/cloudinary.service');
 
 const execFile = promisify(executeFile);
 const OFFICE_MIME_TYPES = new Set([
@@ -278,23 +278,6 @@ const listLearningFiles = asyncHandler(async (req, res) => {
   return apiResponse.success(res, { message: 'Learning files fetched', data });
 });
 
-const storedLearningFilePath = async (item, req) => {
-  const filename = path.basename(item.storedFilename);
-  const sourcePath = path.join(uploadDir, filename);
-  try {
-    await fs.access(sourcePath);
-    return sourcePath;
-  } catch {
-    logger.error('Learning file is missing from configured upload storage', {
-      requestId: req.requestId,
-      learningFileId: String(item._id),
-      storedFilename: filename,
-      uploadDir,
-    });
-    throw new AppError('This uploaded file is no longer available. Please ask an administrator to upload it again.', STATUS_CODES.NOT_FOUND);
-  }
-};
-
 const downloadLearningFile = asyncHandler(async (req, res) => {
   let decoded;
   try {
@@ -315,16 +298,8 @@ const downloadLearningFile = asyncHandler(async (req, res) => {
   } else if (![ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.TEACHER].includes(decoded.role)) {
     throw new AppError('Download link is invalid', STATUS_CODES.FORBIDDEN);
   }
-  const sourcePath = await storedLearningFilePath(item, req);
-  // The mobile app deliberately requests inline content for its private
-  // in-app preview cache.  Do not force Android to hand the material to an
-  // external downloader/application in that case.
-  if (req.query.inline === '1') {
-    res.type(item.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(item.originalFilename)}"`);
-    return res.sendFile(sourcePath);
-  }
-  return res.download(sourcePath, item.originalFilename);
+  if (!item.fileUrl?.startsWith('https://')) throw new AppError('This uploaded file is no longer available. Please ask an administrator to upload it again.', STATUS_CODES.NOT_FOUND);
+  return res.redirect(302, item.fileUrl);
 });
 
 const previewLearningFile = asyncHandler(async (req, res) => {
@@ -359,15 +334,13 @@ const previewLearningFile = asyncHandler(async (req, res) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  const sourcePath = await storedLearningFilePath(item, req);
   if (!OFFICE_MIME_TYPES.has(item.mimeType)) {
     if (!(item.mimeType === 'application/pdf' || item.mimeType.startsWith('image/') || item.mimeType.startsWith('text/'))) {
       throw new AppError('This file type cannot be previewed in the app', 415);
     }
-    res.type(item.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(item.originalFilename)}"`);
-    logger.info('Learning file preview streaming', { requestId: req.requestId, learningFileId: String(item._id), previewMimeType: item.mimeType });
-    return res.sendFile(sourcePath);
+    if (!item.fileUrl?.startsWith('https://')) throw new AppError('This uploaded file is no longer available. Please ask an administrator to upload it again.', STATUS_CODES.NOT_FOUND);
+    logger.info('Learning file preview redirecting to Cloudinary', { requestId: req.requestId, learningFileId: String(item._id), previewMimeType: item.mimeType });
+    return res.redirect(302, item.fileUrl);
   }
 
   // LibreOffice renders Office documents to a short-lived server-private PDF.
@@ -375,6 +348,11 @@ const previewLearningFile = asyncHandler(async (req, res) => {
   const temporaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shahu-preview-'));
   const cleanup = () => fs.rm(temporaryDir, { recursive: true, force: true }).catch(() => undefined);
   try {
+    if (!item.fileUrl?.startsWith('https://')) throw new AppError('This uploaded file is no longer available. Please ask an administrator to upload it again.', STATUS_CODES.NOT_FOUND);
+    const response = await fetch(item.fileUrl);
+    if (!response.ok) throw new Error(`Cloudinary download failed (${response.status})`);
+    const sourcePath = path.join(temporaryDir, path.basename(item.originalFilename));
+    await fs.writeFile(sourcePath, Buffer.from(await response.arrayBuffer()));
     await execFile(process.env.LIBREOFFICE_BIN || 'soffice', ['--headless', '--convert-to', 'pdf', '--outdir', temporaryDir, sourcePath], { timeout: 90000 });
     const generated = (await fs.readdir(temporaryDir)).find(file => file.toLowerCase().endsWith('.pdf'));
     if (!generated) throw new Error('LibreOffice did not produce a PDF.');
@@ -430,18 +408,25 @@ const createLearningFile = asyncHandler(async (req, res) => {
   }
   const learningPayload = { ...req.body };
   delete learningPayload.course;
-  const item = await LearningFile.create({
+  const upload = await uploadBuffer(req.file, { folder: 'shahu-academy/learning-files' });
+  let item;
+  try { item = await LearningFile.create({
     ...learningPayload,
     ...(courseId ? { course: courseId } : {}),
     category,
     originalFilename: readableFilename(req.file.originalname),
-    storedFilename: req.file.filename,
-    fileUrl: `/uploads/${req.file.filename}`,
+    storedFilename: upload.public_id,
+    fileUrl: upload.secure_url,
+    publicId: upload.public_id,
+    cloudinaryResourceType: upload.resource_type,
     mimeType: req.file.mimetype,
     fileSize: req.file.size,
     createdBy: req.user._id,
     updatedBy: req.user._id,
-  });
+  }); } catch (error) {
+    await destroyAsset(upload.public_id, upload.resource_type).catch(() => undefined);
+    throw error;
+  }
   await AuditLog.create({
     user: req.user._id,
     role: req.user.role,
@@ -576,6 +561,10 @@ const removeLearningFile = asyncHandler(async (req, res) => {
   item.deletedBy = req.user._id;
   item.updatedBy = req.user._id;
   await item.save();
+  // Imported copies share one Cloudinary object. Do not remove it while an
+  // active copy is still available in another course/subject.
+  const remaining = item.publicId ? await LearningFile.exists({ _id: { $ne: item._id }, publicId: item.publicId, isDeleted: { $ne: true } }) : null;
+  if (item.publicId && !remaining) await destroyAsset(item.publicId, item.cloudinaryResourceType).catch(() => undefined);
   await AuditLog.create({
     user: req.user._id, role: req.user.role, action: 'learning_file_removed',
     module: 'learning-files', recordId: item._id, previousValue,
@@ -702,7 +691,7 @@ const previewQuestions = asyncHandler(async (req, res) => {
   try {
     if (extension === '.csv') {
       const workbook = new ExcelJS.Workbook();
-      await workbook.csv.readFile(req.file.path);
+      await workbook.csv.load(req.file.buffer);
       const sheet = workbook.worksheets[0];
       worksheetName = sheet?.name;
       if (sheet) {
@@ -710,17 +699,13 @@ const previewQuestions = asyncHandler(async (req, res) => {
         for (let number = 2; number <= sheet.rowCount; number += 1) { sourceRows += 1; if (sourceRows > MAX_QUESTION_IMPORT_ROWS) break; consumeRow(sheet.getRow(number), number); }
       }
     } else {
-      let readFirstSheet = false;
-      for await (const sheet of new ExcelJS.stream.xlsx.WorkbookReader(req.file.path)) {
-        if (readFirstSheet) break;
-        readFirstSheet = true;
-        worksheetName = sheet.name;
-        for await (const row of sheet) {
-          if (row.number === 1) { row.eachCell({ includeEmpty: true }, (cell, col) => { headers[String(cell.text).trim().toLowerCase()] = col; }); continue; }
-          sourceRows += 1;
-          if (sourceRows > MAX_QUESTION_IMPORT_ROWS) break;
-          consumeRow(row, row.number);
-        }
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(req.file.buffer);
+      const sheet = workbook.worksheets[0];
+      worksheetName = sheet?.name;
+      if (sheet) {
+        sheet.getRow(1).eachCell((cell, col) => { headers[String(cell.text).trim().toLowerCase()] = col; });
+        for (let number = 2; number <= sheet.rowCount; number += 1) { sourceRows += 1; if (sourceRows > MAX_QUESTION_IMPORT_ROWS) break; consumeRow(sheet.getRow(number), number); }
       }
     }
   } catch (error) {
@@ -832,8 +817,9 @@ const previewQuestions = asyncHandler(async (req, res) => {
     course: req.body.course,
     subject: req.body.subject,
     originalFilename: readableFilename(req.file.originalname),
-    storedFilename: req.file.filename,
-    fileUrl: `/uploads/${req.file.filename}`,
+    // Spreadsheet data is parsed immediately and stored as question rows.
+    // The original is deliberately not written to Render's filesystem.
+    storedFilename: `${Date.now()}-${readableFilename(req.file.originalname)}`,
     totalRows: rows.length,
     validRows,
     invalidRows: rows.length - validRows - duplicateRows,

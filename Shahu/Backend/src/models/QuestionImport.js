@@ -7,6 +7,8 @@ const schema = new mongoose.Schema(
     originalFilename: String,
     storedFilename: String,
     fileUrl: String,
+    publicId: String,
+    cloudinaryResourceType: String,
     totalRows: Number,
     validRows: Number,
     invalidRows: Number,

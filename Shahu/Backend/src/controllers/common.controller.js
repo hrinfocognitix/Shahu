@@ -1,18 +1,11 @@
-const fs = require('fs/promises');
-const path = require('path');
 const sharp = require('sharp');
 const asyncHandler = require('../utils/asyncHandler');
 const apiResponse = require('../utils/apiResponse');
 const { MESSAGES } = require('../constants/messages');
+const { uploadBuffer } = require('../services/cloudinary.service');
 
 const health = asyncHandler(async (req, res) =>
-  apiResponse.success(res, {
-    message: MESSAGES.HEALTH_OK,
-    data: {
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString()
-    }
-  })
+  apiResponse.success(res, { message: MESSAGES.HEALTH_OK, data: { uptime: process.uptime(), timestamp: new Date().toISOString() } })
 );
 
 const uploadFile = asyncHandler(async (req, res) => {
@@ -21,35 +14,26 @@ const uploadFile = asyncHandler(async (req, res) => {
     error.statusCode = 400;
     throw error;
   }
-
-  let uploadedFile = req.file;
-  try {
-    const webImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
-    if (uploadedFile.mimetype.startsWith('image/')) {
-      await sharp(uploadedFile.path).metadata();
+  if (req.file.mimetype.startsWith('image/')) {
+    try { await sharp(req.file.buffer).metadata(); }
+    catch {
+      const error = new Error('The uploaded image is invalid or corrupted');
+      error.statusCode = 400;
+      throw error;
     }
-    if (uploadedFile.mimetype.startsWith('image/') && !webImageTypes.has(uploadedFile.mimetype)) {
-      const parsedName = path.parse(uploadedFile.filename);
-      const convertedFilename = `${parsedName.name}.webp`;
-      const convertedPath = path.join(uploadedFile.destination, convertedFilename);
-      await sharp(uploadedFile.path).rotate().webp({ quality: 88 }).toFile(convertedPath);
-      await fs.unlink(uploadedFile.path);
-      const convertedStats = await fs.stat(convertedPath);
-      uploadedFile = {
-        ...uploadedFile, filename: convertedFilename, path: convertedPath,
-        mimetype: 'image/webp', size: convertedStats.size
-      };
-    }
-  } catch (error) {
-    await fs.unlink(req.file.path).catch(() => undefined);
-    error.statusCode = 400;
-    error.message = 'The uploaded image is invalid or corrupted';
-    throw error;
   }
-
+  const result = await uploadBuffer(req.file, { folder: 'shahu-academy/common' });
   return apiResponse.success(res, {
     message: 'File uploaded',
-    data: { ...uploadedFile, url: `/uploads/${uploadedFile.filename}` }
+    data: {
+      filename: result.public_id,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      public_id: result.public_id,
+      secure_url: result.secure_url,
+      url: result.secure_url,
+    }
   });
 });
 

@@ -1,16 +1,8 @@
 const path = require('path');
 const multer = require('multer');
-const { uploadDir } = require('../config/storage');
-
-const storage = multer.diskStorage({
-  destination(req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename(req, file, cb) {
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '-');
-    cb(null, `${Date.now()}-${safeName}`);
-  }
-});
+// Render's filesystem is ephemeral. Keep the upload only for the lifetime of
+// the request; controllers stream the buffer to Cloudinary.
+const storage = multer.memoryStorage();
 
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.heic', '.heif', '.bmp', '.tif', '.tiff']);
 const videoTypes = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v']);
