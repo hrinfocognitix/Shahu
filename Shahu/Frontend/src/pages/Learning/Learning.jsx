@@ -47,8 +47,10 @@ export function Learning() {
   const [searchParams] = useSearchParams();
   const [courses, setCourses] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [course, setCourse] = useState(searchParams.get('course') || '');
-  const [subject, setSubject] = useState(searchParams.get('subject') || '');
+  const requestedCourseId = searchParams.get('course') || '';
+  const requestedSubjectId = searchParams.get('subject') || '';
+  const [course, setCourse] = useState(requestedCourseId);
+  const [subject, setSubject] = useState(requestedSubjectId);
   const requestedType = searchParams.get('type') || '';
   const [selectedTypes, setSelectedTypes] = useState(
     materialOptions.some(([type]) => type === requestedType) ? [requestedType] : ['syllabus'],
@@ -71,24 +73,30 @@ export function Learning() {
   // The Course → Syllabus button can navigate here while this screen is
   // already mounted. Keep the selectors in sync with its course/subject URL.
   useEffect(() => {
-    setCourse(searchParams.get('course') || '');
-    setSubject(searchParams.get('subject') || '');
-  }, [searchParams]);
+    setCourse(requestedCourseId);
+    setSubject(requestedSubjectId);
+  }, [requestedCourseId, requestedSubjectId]);
 
   const previewUrl = previewItem ? resolveAssetUrl(previewItem.previewUrl) : '';
   const previewType = String(previewItem?.previewMimeType || previewItem?.mimeType || '').toLowerCase();
 
   useEffect(() => {
     Promise.all([
-      apiClient.get('/courses', { params: { limit: 100, status: 'active' } }),
+      // Admin learning management must include draft and inactive courses too.
+      // The direct request guarantees Course → Syllabus preselects a newly
+      // created course even if it is not in the paginated list response.
+      apiClient.get('/courses', { params: { limit: 100 } }),
       apiClient.get('/subjects', { params: { limit: 100, status: 'active' } }),
+      requestedCourseId ? apiClient.get(`/courses/${requestedCourseId}`) : Promise.resolve(null),
     ])
-      .then(([courseResponse, subjectResponse]) => {
-        setCourses(courseResponse.data.data || []);
+      .then(([courseResponse, subjectResponse, selectedCourseResponse]) => {
+        const listedCourses = courseResponse.data.data || [];
+        const selectedCourse = selectedCourseResponse?.data?.data;
+        setCourses([...new Map([...listedCourses, ...(selectedCourse ? [selectedCourse] : [])].map((item) => [item._id, item])).values()]);
         setSubjects(subjectResponse.data.data || []);
       })
       .catch(() => toast.error('Unable to load course and subject options'));
-  }, []);
+  }, [requestedCourseId]);
 
   useEffect(() => {
     if (!subject) {
