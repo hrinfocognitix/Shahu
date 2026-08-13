@@ -80,7 +80,13 @@ const catalog = asyncHandler(async (req, res) => {
     reports,
     deletedRecords,
   ] = await Promise.all([
-    Course.find({ status: 'active', isDeleted: { $ne: true } })
+    // Legacy courses have no isPublished field and remain visible. Newly
+    // created courses require the explicit Publish Course action.
+    Course.find({
+      status: 'active',
+      isDeleted: { $ne: true },
+      $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
+    })
       .populate('subjects instructor subjectDetails.subject')
       .sort({ createdAt: -1 })
       .limit(100),

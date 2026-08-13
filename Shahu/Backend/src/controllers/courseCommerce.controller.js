@@ -33,8 +33,8 @@ const hashCourseOtp = (courseId, code) => crypto.createHash('sha256').update(`co
 const requestCourseOtp = asyncHandler(async (req, res) => {
   const { courseId, name, mobileNo, email, age, education, address } = req.body;
   if (![courseId, name, mobileNo, email, age, education, address].every(value => String(value || '').trim())) throw new AppError('All enrollment fields are required', STATUS_CODES.BAD_REQUEST);
-  const course = await Course.findById(courseId).select('_id name status');
-  if (!course || course.status === 'inactive') throw new AppError('This course is unavailable', STATUS_CODES.NOT_FOUND);
+  const course = await Course.findById(courseId).select('_id name status isPublished');
+  if (!course || course.status === 'inactive' || course.isPublished === false) throw new AppError('This course is unavailable', STATUS_CODES.NOT_FOUND);
   const normalizedEmail = String(email).trim().toLowerCase();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
   const emailRef = crypto.createHash('sha256').update(normalizedEmail).digest('hex').slice(0, 12);
@@ -141,6 +141,7 @@ const createPurchase = asyncHandler(async (req, res) => {
     _id: courseId,
     status: 'active',
     isDeleted: { $ne: true },
+    $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
   }).select(
     '_id name fees price actualPrice discountType discountValue discountPercent duration durationDays primaryPaymentAccount acceptedPaymentAccounts'
   );

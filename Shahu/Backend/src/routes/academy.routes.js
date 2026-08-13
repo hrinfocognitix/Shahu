@@ -2,6 +2,8 @@ const express = require('express');
 const resourceController = require('../controllers/resource.controller');
 const courseCommerceController = require('../controllers/courseCommerce.controller');
 const createResourceRouter = require('./resource.routes');
+const asyncHandler = require('../utils/asyncHandler');
+const apiResponse = require('../utils/apiResponse');
 const Course = require('../models/Course');
 const Subject = require('../models/Subject');
 const Content = require('../models/Content');
@@ -170,6 +172,9 @@ const serverControlledCourseFields = new Set([
   'updateReason',
   'statusReason',
   'deleteReason',
+  'isPublished',
+  'publishedAt',
+  'publishedBy',
 ]);
 const buildCoursePayload = (request) => ({
   ...Object.fromEntries(
@@ -217,6 +222,11 @@ const createCoursePayload = (request) => {
 
   return {
     ...body,
+    // Publishing is an explicit action. Never allow a create request to make
+    // a course public or to send the all-user notification.
+    isPublished: false,
+    publishedAt: null,
+    publishedBy: null,
     actualPrice: originalPrice.amount,
     actualPriceDisplay: originalPrice.display,
     createdBy: request.user._id,
@@ -224,6 +234,45 @@ const createCoursePayload = (request) => {
     actionHistory: [buildCourseAuditEntry(request, 'created', 'Course created')],
   };
 };
+const coursePublishRouter = express.Router();
+coursePublishRouter.post(
+  '/:id/publish',
+  authenticate,
+  authorize(...courseWriteRoles),
+  asyncHandler(async (req, res) => {
+    const course = await Course.findById(req.params.id);
+    if (!course || course.isDeleted) {
+      throw new AppError('Course not found', STATUS_CODES.NOT_FOUND);
+    }
+    if (course.status !== 'active') {
+      throw new AppError('Activate the course before publishing it', STATUS_CODES.BAD_REQUEST);
+    }
+    if (course.isPublished) {
+      throw new AppError('This course has already been published', STATUS_CODES.CONFLICT);
+    }
+
+    course.isPublished = true;
+    course.publishedAt = new Date();
+    course.publishedBy = req.user._id;
+    course.updatedBy = req.user._id;
+    course.lastUpdatedReason = 'Course published';
+    course.actionHistory.push(buildCourseAuditEntry(req, 'updated', 'Course published'));
+    await course.save();
+
+    // Push delivery is best-effort. The publish action remains successful even
+    // if FCM is temporarily unavailable.
+    sendNewCoursePush(course).catch((error) => {
+      logger.error('Course publish notification failed', {
+        courseId: String(course._id),
+        message: error.message,
+      });
+    });
+    return apiResponse.success(res, {
+      message: 'Course published and notification is being sent to all users',
+      data: course,
+    });
+  })
+);
 const updateCoursePayload = async (request) => {
   let reason = requireReason(
     request.body.updateReason,
@@ -438,6 +487,7 @@ const buildPaymentAccount = async (request, creating = false) => {
 };
 
 module.exports = [
+  ['/courses', coursePublishRouter],
   [
     '/courses',
     createResourceRouter(
@@ -445,7 +495,6 @@ module.exports = [
         populate: 'subjects subjectDetails.subject',
         afterList: addCourseEnrollmentCounts,
         beforeCreate: createCoursePayload,
-        afterCreate: (course) => sendNewCoursePush(course),
         beforeUpdate: updateCoursePayload,
         beforeRemove: removeCoursePayload,
         beforePermanentRemove: preventReferencedCoursePermanentDelete,

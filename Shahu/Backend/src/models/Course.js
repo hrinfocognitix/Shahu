@@ -147,6 +147,11 @@ const courseSchema = new mongoose.Schema(
     featured: { type: Boolean, default: false },
     popular: { type: Boolean, default: false },
     visibility: { type: String, enum: ['public', 'private', 'hidden'], default: 'public' },
+    // New courses are prepared as drafts and become student-visible only when
+    // an administrator explicitly publishes them.
+    isPublished: { type: Boolean, default: false, index: true },
+    publishedAt: { type: Date, default: null },
+    publishedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     instructor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     payment: {
       qrCode: String,

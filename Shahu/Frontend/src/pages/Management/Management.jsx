@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiBookOpen, FiEdit2, FiEye, FiPlus, FiTrash2, FiUsers, FiX } from 'react-icons/fi';
+import { FiBookOpen, FiEdit2, FiEye, FiPlus, FiSend, FiTrash2, FiUsers, FiX } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { apiClient } from '../../api/axios';
 import { environment } from '../../config/environment';
@@ -484,6 +484,17 @@ export function Management({ resource }) {
     }
   };
 
+  const publishCourse = async (course) => {
+    if (!window.confirm(`Publish “${course.name}” and notify all users?`)) return;
+    try {
+      const response = await apiClient.post(`/courses/${course._id}/publish`);
+      toast.success(response.data.message || 'Course published');
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to publish course');
+    }
+  };
+
   const purchaseSummary = useMemo(
     () =>
       items.reduce((summary, item) => {
@@ -595,6 +606,9 @@ export function Management({ resource }) {
                       ) : null}
                     </small>
                     <small className="course-list-meta">{Number(item.purchasedStudentCount || 0)} purchased user{Number(item.purchasedStudentCount || 0) === 1 ? '' : 's'} · {Number(item.activeEnrollmentCount || 0)} active enrollment{Number(item.activeEnrollmentCount || 0) === 1 ? '' : 's'}</small>
+                    <small className="course-list-meta">
+                      Publish date: {item.publishedAt ? new Date(item.publishedAt).toLocaleString('en-IN') : 'Not published yet'}
+                    </small>
                     {item.priceHistory?.length ? (
                       <details className="course-price-history">
                         <summary>Price update history ({item.priceHistory.length})</summary>
@@ -612,13 +626,18 @@ export function Management({ resource }) {
                   </>
                 )}
               </div>
-              <span className={`status-pill ${isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : String(item.status || 'active').toLowerCase()}`}>
-                {isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'Disabled course' : item.status || 'active'}
+              <span className={`status-pill ${isCourse && item.isPublished === false ? 'inactive' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : String(item.status || 'active').toLowerCase()}`}>
+                {isCourse && item.isPublished === false ? 'Draft' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'Disabled course' : item.status || 'active'}
               </span>
               {!isPurchases && (
                 <div className="row-actions">
                   {isCourse ? (
                     <>
+                      {item.isPublished === false ? (
+                        <button className="text-button" onClick={() => publishCourse(item)}>
+                          <FiSend /> Publish course
+                        </button>
+                      ) : null}
                       <button className="text-button" onClick={() => navigate(`/learning?course=${item._id}`)}>
                         <FiBookOpen /> Syllabus
                       </button>
@@ -770,10 +789,17 @@ function CourseFields({ form, update, editing, paymentAccounts, activeSubjects }
       <label>
         <span>Course status</span>
         <select value={form.status || 'active'} onChange={(event) => update('status', event.target.value)}>
-          <option value="active">Active — visible to students</option>
-          <option value="inactive">Inactive — hidden from students</option>
+          <option value="active">Active — ready to publish</option>
+          <option value="inactive">Inactive — unavailable</option>
         </select>
       </label>
+      {editing ? (
+        <small className="full-field">
+          Publish date: {form.publishedAt ? new Date(form.publishedAt).toLocaleString('en-IN') : 'Not published yet. Use Publish course from the course list when this course is ready.'}
+        </small>
+      ) : (
+        <small className="full-field">New courses are saved as drafts. Publish them from the course list when ready; that action notifies all users.</small>
+      )}
       {editing && form.status !== editing.status ? (
         <Field
           label={`Reason for changing status to ${form.status}`}
