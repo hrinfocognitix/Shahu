@@ -977,7 +977,7 @@ const confirmQuestions = asyncHandler(async (req, res) => {
     : inlineValidRows.length > 0;
   if (!hasValidRows) {
     logger.warn('Mock-test import rejected', { requestId: req.requestId, importId: String(batch._id), reason: 'no_valid_rows' });
-    throw new AppError('There are no valid rows to import', 400);
+    throw new AppError('This preview has no accepted questions. Upload and validate the Excel file again before saving.', 400);
   }
   let imported = 0;
   const subjectIds = new Set();
