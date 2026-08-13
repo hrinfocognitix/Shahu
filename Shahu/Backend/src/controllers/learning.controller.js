@@ -1074,13 +1074,24 @@ const listQuestions = asyncHandler(async (req, res) => {
 const listMockTests = asyncHandler(async (req, res) => {
   await assertEnrollment(req, req.query.course);
   const activeSubjects = await Subject.find({ status: 'active', isDeleted: { $ne: true } }).distinct('_id');
-  const filter = { course: req.query.course, subject: { $in: activeSubjects }, status: 'imported' };
+  const questionFilter = {
+    course: req.query.course,
+    subject: { $in: activeSubjects },
+    importBatch: { $exists: true, $ne: null },
+    status: 'published',
+    isDeleted: { $ne: true },
+  };
   if (req.query.subject) {
     if (!activeSubjects.some((id) => String(id) === String(req.query.subject))) {
       return apiResponse.success(res, { message: 'Mock tests fetched', data: [] });
     }
-    filter.subject = req.query.subject;
+    questionFilter.subject = req.query.subject;
   }
+  const availableMockTestIds = await Question.distinct('importBatch', questionFilter);
+  if (!availableMockTestIds.length) {
+    return apiResponse.success(res, { message: 'Mock tests fetched', data: [] });
+  }
+  const filter = { _id: { $in: availableMockTestIds }, course: req.query.course, status: 'imported' };
   const items = await QuestionImport.find(filter)
     .populate('subject', 'name subjectCode')
     .sort({ importedAt: -1, createdAt: -1 })

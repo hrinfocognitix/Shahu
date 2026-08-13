@@ -237,9 +237,6 @@ export function Management({ resource }) {
   };
 
   const beginEdit = (item) => {
-    if (isCourse && Number(item.purchasedStudentCount || 0) > 0) {
-      toast.info(`This course has ${item.purchasedStudentCount} purchased student${Number(item.purchasedStudentCount) === 1 ? '' : 's'} (${item.activeEnrollmentCount || 0} active). You can update course details, but keep enrolled students and learning content in mind.`);
-    }
     setEditing(item);
     if (isCourse) {
       setForm({

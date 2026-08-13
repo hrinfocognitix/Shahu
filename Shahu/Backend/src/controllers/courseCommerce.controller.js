@@ -1,8 +1,10 @@
 const Course = require('../models/Course');
+const Subject = require('../models/Subject');
 const AcademyRecord = require('../models/AcademyRecord');
 const Transaction = require('../models/Transaction');
 const Enrollment = require('../models/Enrollment');
 const LearningFile = require('../models/LearningFile');
+const Question = require('../models/Question');
 const QuestionImport = require('../models/QuestionImport');
 const QuestionAttempt = require('../models/QuestionAttempt');
 const StudentDevice = require('../models/StudentDevice');
@@ -673,14 +675,29 @@ const myStudentProfile = asyncHandler(async (req, res) => {
     .filter(Boolean);
   // Material may be uploaded for a subject before that subject is attached to
   // a course. Include it when deciding which Android material tabs to show.
-  const activeSubjectIds = enrollmentData
+  const enrolledSubjectIds = enrollmentData
     .filter((enrollment) => enrollment.status === 'active' && enrollment.remainingDays > 0)
     .flatMap((enrollment) => enrollment.course?.subjects || [])
     .map((subject) => subject?._id || subject)
     .filter(Boolean);
+  // Course documents retain subject IDs after an admin deletes a subject.
+  // Resolve only active, non-deleted Subject records before advertising any
+  // material category to Android.
+  const activeSubjectIds = enrolledSubjectIds.length
+    ? await Subject.find({
+      _id: { $in: enrolledSubjectIds },
+      status: 'active',
+      isDeleted: { $ne: true },
+    }).distinct('_id')
+    : [];
   const [fileCategories, subjectMaterialCategories, hasMockTests] = activeCourseIds.length
     ? await Promise.all([
-      LearningFile.distinct('category', { course: { $in: activeCourseIds }, status: 'published', isDeleted: { $ne: true } }),
+      LearningFile.distinct('category', {
+        course: { $in: activeCourseIds },
+        subject: { $in: activeSubjectIds },
+        status: 'published',
+        isDeleted: { $ne: true },
+      }),
       activeSubjectIds.length
         ? LearningFile.distinct('category', {
           course: { $exists: false },
@@ -689,7 +706,15 @@ const myStudentProfile = asyncHandler(async (req, res) => {
           isDeleted: { $ne: true },
         })
         : [],
-      QuestionImport.exists({ course: { $in: activeCourseIds }, status: 'imported' }),
+      activeSubjectIds.length
+        ? Question.exists({
+          course: { $in: activeCourseIds },
+          subject: { $in: activeSubjectIds },
+          importBatch: { $exists: true, $ne: null },
+          status: 'published',
+          isDeleted: { $ne: true },
+        })
+        : false,
     ])
     : [[], [], false];
   const materialCategories = hasMockTests
