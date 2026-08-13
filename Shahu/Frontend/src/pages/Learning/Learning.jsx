@@ -49,7 +49,10 @@ export function Learning() {
   const [subjects, setSubjects] = useState([]);
   const [course, setCourse] = useState(searchParams.get('course') || '');
   const [subject, setSubject] = useState(searchParams.get('subject') || '');
-  const [selectedTypes, setSelectedTypes] = useState(['syllabus']);
+  const requestedType = searchParams.get('type') || '';
+  const [selectedTypes, setSelectedTypes] = useState(
+    materialOptions.some(([type]) => type === requestedType) ? [requestedType] : ['syllabus'],
+  );
   const [noteEntries, setNoteEntries] = useState([createNoteEntry()]);
   const [questionEntries, setQuestionEntries] = useState([createQuestionEntry()]);
   const [questionPaperEntries, setQuestionPaperEntries] = useState([createQuestionPaperEntry()]);
@@ -97,7 +100,12 @@ export function Learning() {
             .map((item) => (item.category === 'syllabus-copy' ? 'syllabus' : item.category))
             .filter((type) => materialOptions.some(([key]) => key === type)),
         )];
-        setSelectedTypes(savedTypes.length ? savedTypes : ['syllabus']);
+        const requestedTypes = materialOptions.some(([type]) => type === requestedType)
+          ? [requestedType]
+          : [];
+        setSelectedTypes([...new Set([...savedTypes, ...requestedTypes])].length
+          ? [...new Set([...savedTypes, ...requestedTypes])]
+          : ['syllabus']);
       })
       .catch(() => {
         if (isCurrentSelection) {
@@ -109,7 +117,7 @@ export function Learning() {
     return () => {
       isCurrentSelection = false;
     };
-  }, [course, subject]);
+  }, [course, requestedType, subject]);
 
   const availableSubjects = useMemo(
     () =>
@@ -139,8 +147,9 @@ export function Learning() {
     [course, courses, sourceCourse, subject, subjects],
   );
 
-  // Before a course exists, only the subject-level syllabus is available.
-  const documentTypes = course ? selectedTypes : selectedTypes.filter((type) => type === 'syllabus');
+  // Every document type can be saved directly against a subject. It becomes
+  // visible to students when that subject is assigned to their course.
+  const documentTypes = selectedTypes;
   const selectedCourseName = useMemo(
     () => courses.find((item) => item._id === course)?.name || 'Selected course',
     [course, courses],
@@ -315,7 +324,7 @@ export function Learning() {
       await Promise.all(
         noteEntries.map((entry) => {
           const data = new FormData();
-          data.append('course', course);
+          if (course) data.append('course', course);
           data.append('subject', subject);
           data.append('category', 'notes');
           data.append('title', entry.title.trim());
@@ -351,7 +360,7 @@ export function Learning() {
       await Promise.all(
         questionEntries.map((entry) => {
           const data = new FormData();
-          data.append('course', course);
+          if (course) data.append('course', course);
           data.append('subject', subject);
           data.append('category', 'generated-questions');
           data.append('title', entry.title.trim());
@@ -387,7 +396,7 @@ export function Learning() {
       await Promise.all(
         questionPaperEntries.map((entry) => {
           const data = new FormData();
-          data.append('course', course);
+          if (course) data.append('course', course);
           data.append('subject', subject);
           data.append('category', 'question-paper');
           data.append('title', entry.title.trim());
@@ -568,13 +577,13 @@ export function Learning() {
       ) : null}
 
       {!subject ? (
-        <div className="card student-empty">Select a subject to add its syllabus. A course is optional for syllabus and required for all other material.</div>
+        <div className="card student-empty">Select a subject to add learning material.</div>
       ) : !selectedTypes.length ? (
         <div className="card student-empty">Select at least one material type.</div>
       ) : (
         <div className="learning-layout">
           <aside>
-            {!course ? <div className="card student-empty">You are adding a subject-level syllabus. It will automatically appear after this subject is assigned to a course.</div> : null}
+            {!course ? <div className="card student-empty">You are adding subject-level material. It will automatically appear after this subject is assigned to a course.</div> : null}
             {course ? <div className="card student-empty"><strong>Save material for</strong><br />{materialDestination}<br /><small>Select a material type, complete its form, and use its Save button below.</small></div> : null}
             {selectedTypes.includes('notes') ? (
               <form className="notes-upload-form material-panel material-panel--notes" onSubmit={uploadNotes}>

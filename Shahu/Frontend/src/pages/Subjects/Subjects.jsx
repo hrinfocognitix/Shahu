@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiBookOpen, FiDownload, FiEdit2, FiPlus, FiTrash2, FiUpload, FiX } from 'react-icons/fi';
+import { FiBookOpen, FiDownload, FiEdit2, FiFile, FiPlus, FiTrash2, FiUpload, FiX } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 
 import { apiClient } from '../../api/axios';
@@ -82,8 +82,8 @@ export function Subjects() {
     }
   };
 
-  const openSyllabusWorkspace = (subject) => {
-    navigate(`/learning?subject=${encodeURIComponent(subject._id)}`);
+  const openMaterialWorkspace = (subject, type = 'syllabus') => {
+    navigate(`/learning?subject=${encodeURIComponent(subject._id)}&type=${encodeURIComponent(type)}`);
   };
   const openMockTest = async (subject) => {
     setMockTestSubject(subject);
@@ -163,11 +163,23 @@ export function Subjects() {
             <p>{item.description || 'No description added'}</p>
             <small>Created {new Date(item.createdAt).toLocaleDateString('en-IN')}</small>
             <div className="subject-card-actions">
-              <button className="text-button" onClick={() => openSyllabusWorkspace(item)}>
+              <button className="text-button" onClick={() => openMaterialWorkspace(item)}>
                 <FiBookOpen /> Syllabus
+              </button>
+              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'notes')}>
+                <FiFile /> Notes
+              </button>
+              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'generated-questions')}>
+                <FiFile /> Questions
+              </button>
+              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'question-paper')}>
+                <FiFile /> Old papers
               </button>
               <button className="text-button" onClick={() => openMockTest(item)}>
                 <FiUpload /> Mock test
+              </button>
+              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'other')}>
+                <FiFile /> Other
               </button>
               <button className="text-button" onClick={() => openEditForm(item)}>
                 <FiEdit2 /> Edit

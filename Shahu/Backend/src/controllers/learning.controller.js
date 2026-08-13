@@ -129,7 +129,7 @@ async function assertStudentLearningFileAccess(userId, item) {
   if (item.course) {
     accessWindow.course = item.course;
   } else {
-    // A subject-level syllabus is visible only through a course that contains
+    // Subject-level material is visible only through a course that contains
     // the subject and to which the student is currently enrolled.
     const courseIds = await Course.find({ subjects: item.subject, isDeleted: { $ne: true } }).distinct('_id');
     accessWindow.course = { $in: courseIds };
@@ -248,19 +248,17 @@ const listLearningFiles = asyncHandler(async (req, res) => {
   const filter = { isDeleted: { $ne: true } };
   if (req.query.unassigned === 'true') {
     filter.course = { $exists: false };
-    filter.category = 'syllabus-copy';
   } else if (req.query.course) {
-    // Subject-level syllabus becomes available as soon as its subject is
+    // Subject-level material becomes available as soon as its subject is
     // attached to this course, without a second upload. Limit the fallback
     // to that course's subjects so a student does not receive unrelated
-    // subject-level syllabuses.
+    // material.
     const course = await Course.findById(req.query.course).select('subjects');
     const subjectIds = course?.subjects || [];
     filter.$or = [
       { course: req.query.course },
       {
         course: { $exists: false },
-        category: 'syllabus-copy',
         subject: { $in: subjectIds },
       },
     ];
@@ -414,8 +412,6 @@ const createLearningFile = asyncHandler(async (req, res) => {
   const courseId = String(req.body.course || '').trim();
   if (courseId) {
     await assertCourseSubject(courseId, req.body.subject);
-  } else if (category !== 'syllabus-copy') {
-    throw new AppError('Create or select a course before uploading this material. Only syllabus can be added directly to a subject.', STATUS_CODES.BAD_REQUEST);
   }
   const learningPayload = { ...req.body };
   delete learningPayload.course;
