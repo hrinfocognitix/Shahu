@@ -79,6 +79,26 @@ const normalizedOptionSignature = (options) =>
   ['A', 'B', 'C', 'D']
     .map((key) => normalizeQuestion(options?.[key]))
     .join('\u001f');
+const resolveCorrectOption = (answer, options) => {
+  const raw = String(answer || '').trim();
+  const compact = raw
+    .toLowerCase()
+    .replace(/[().,:\-]/g, '')
+    .replace(/\s+/g, '');
+  const answerKeys = {
+    a: 'A', b: 'B', c: 'C', d: 'D',
+    '1': 'A', '2': 'B', '3': 'C', '4': 'D',
+    '१': 'A', '२': 'B', '३': 'C', '४': 'D',
+    'अ': 'A', 'ब': 'B', 'क': 'C', 'ड': 'D',
+    optiona: 'A', optionb: 'B', optionc: 'C', optiond: 'D',
+    option1: 'A', option2: 'B', option3: 'C', option4: 'D',
+    'पर्यायअ': 'A', 'पर्यायब': 'B', 'पर्यायक': 'C', 'पर्यायड': 'D',
+  };
+  if (answerKeys[compact]) return answerKeys[compact];
+  return ['A', 'B', 'C', 'D'].find(
+    (key) => normalizeQuestion(options[key]) === normalizeQuestion(raw),
+  ) || '';
+};
 // Old uploads from browsers that sent UTF-8 filenames as Latin-1 can appear
 // as "à¤—...". Repair only that recognizable mojibake pattern for display.
 const readableFilename = (value) => {
@@ -667,19 +687,16 @@ const previewQuestions = asyncHandler(async (req, res) => {
       sheetSubject: get('subject'), questionText: get('question', 'प्रश्न'),
       optionA: get('option1', 'option a', 'पर्याय अ'), optionB: get('option2', 'option b', 'पर्याय ब'),
       optionC: get('option3', 'option c', 'पर्याय क'), optionD: get('option4', 'option d', 'पर्याय ड'),
-      correctAnswer: get('correctanswer', 'correct option', 'योग्य उत्तर'), explanation: get('justification', 'explanation', 'स्पष्टीकरण'),
+      correctAnswer: get('correctanswer', 'correct answer', 'correct option', 'answer', 'योग्य उत्तर', 'उत्तर'), explanation: get('justification', 'explanation', 'स्पष्टीकरण'),
       marks: Number(get('marks') || 1), negativeMarks: Number(get('negativemarks', 'negative marks') || 0),
       difficulty: (get('difficulty') || 'medium').toLowerCase(), chapter: get('chapter', 'प्रकरण'), topic: get('topic', 'प्रकरण'),
       questionType: get('questiontype') || 'MCQ', questionImage: get('questionimage'), option1Image: get('option1image'),
       option2Image: get('option2image'), option3Image: get('option3image'), option4Image: get('option4image'),
       explanationImage: get('explanationimage'), status: (get('status') || 'published').toLowerCase(),
     };
-    const answer = data.correctAnswer.trim();
-    const marathiOptionKeys = { 'अ': 'A', 'ब': 'B', 'क': 'C', 'ड': 'D' };
-    if (marathiOptionKeys[answer]) data.correctOption = marathiOptionKeys[answer];
-    else if (/^[a-d]$/i.test(answer)) data.correctOption = answer.toUpperCase();
-    else if (/^option\s*[1-4]$/i.test(answer)) data.correctOption = String.fromCharCode(64 + Number(answer.match(/[1-4]/)[0]));
-    else data.correctOption = ['A', 'B', 'C', 'D'].find((key) => data[`option${key}`] === answer) || ({ 'पर्याय अ': 'A', 'पर्याय ब': 'B', 'पर्याय क': 'C', 'पर्याय ड': 'D' }[answer]) || '';
+    data.correctOption = resolveCorrectOption(data.correctAnswer, {
+      A: data.optionA, B: data.optionB, C: data.optionC, D: data.optionD,
+    });
     data.subject = data.sheetSubject ? subjectIdsByName.get(normalizeQuestion(data.sheetSubject)) : String(req.body.subject);
     if (!data.questionText && !data.optionA && !data.optionB) return;
     const errors = [];
@@ -699,7 +716,9 @@ const previewQuestions = asyncHandler(async (req, res) => {
     const duplicateKey = `${String(data.subject)}:${normalized}:${normalizedOptions}`;
     const duplicateInUpload = seen.has(duplicateKey);
     seen.add(duplicateKey);
-    rows.push({ rowNumber: number, data: { ...data, normalizedText: normalized, normalizedOptions }, valid: !errors.length && !duplicateInUpload, skipped: duplicateInUpload, validationErrors: errors });
+    // Do not surface validation errors for a repeated question/options row:
+    // the first occurrence is the only one that can be imported.
+    rows.push({ rowNumber: number, data: { ...data, normalizedText: normalized, normalizedOptions }, valid: !errors.length && !duplicateInUpload, skipped: duplicateInUpload, validationErrors: duplicateInUpload ? [] : errors });
   };
   logger.info('Mock-test spreadsheet source-file reading started', uploadMeta);
   try {
