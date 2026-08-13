@@ -678,18 +678,43 @@ const previewQuestions = asyncHandler(async (req, res) => {
   const seen = new Set();
   let worksheetName;
   let sourceRows = 0;
+  let shiftedQuestionColumns = null;
   const consumeRow = (row, number) => {
     const get = (...names) => {
       const column = names.map((name) => headers[name.toLowerCase()]).find(Boolean);
       return column ? row.getCell(column).text.trim() : '';
     };
+    const chapterValue = get('chapter', 'प्रकरण');
+    const questionValue = get('question', 'प्रश्न');
+    const optionAValue = get('option1', 'option a', 'पर्याय अ');
+    const optionBValue = get('option2', 'option b', 'पर्याय ब');
+    const optionCValue = get('option3', 'option c', 'पर्याय क');
+    const optionDValue = get('option4', 'option d', 'पर्याय ड');
+    const correctAnswerValue = get('correctanswer', 'correct answer', 'correct option', 'answer', 'योग्य उत्तर', 'उत्तर');
+    // Some academy Excel files retain the Chapter header but omit that blank
+    // cell in every data row. In that layout all question fields shift left by
+    // one column; detect it from the blank Correct Answer column and repair it
+    // before validation/import.
+    if (shiftedQuestionColumns === null) {
+      // Infer the workbook's data layout once, from the first populated row.
+      // Later rows may legitimately have blank optional cells, so they must
+      // keep the same mapping instead of being rejected as misaligned.
+      shiftedQuestionColumns = !correctAnswerValue && Boolean(
+        chapterValue && questionValue && optionAValue && optionBValue && optionCValue && optionDValue,
+      );
+    }
+    const shiftedWithoutChapter = shiftedQuestionColumns === true;
     const data = {
-      sheetSubject: get('subject'), questionText: get('question', 'प्रश्न'),
-      optionA: get('option1', 'option a', 'पर्याय अ'), optionB: get('option2', 'option b', 'पर्याय ब'),
-      optionC: get('option3', 'option c', 'पर्याय क'), optionD: get('option4', 'option d', 'पर्याय ड'),
-      correctAnswer: get('correctanswer', 'correct answer', 'correct option', 'answer', 'योग्य उत्तर', 'उत्तर'), explanation: get('justification', 'explanation', 'स्पष्टीकरण'),
+      sheetSubject: get('subject'),
+      questionText: shiftedWithoutChapter ? chapterValue : questionValue,
+      optionA: shiftedWithoutChapter ? questionValue : optionAValue,
+      optionB: shiftedWithoutChapter ? optionAValue : optionBValue,
+      optionC: shiftedWithoutChapter ? optionBValue : optionCValue,
+      optionD: shiftedWithoutChapter ? optionCValue : optionDValue,
+      correctAnswer: shiftedWithoutChapter ? optionDValue : correctAnswerValue,
+      explanation: get('justification', 'explanation', 'स्पष्टीकरण'),
       marks: Number(get('marks') || 1), negativeMarks: Number(get('negativemarks', 'negative marks') || 0),
-      difficulty: (get('difficulty') || 'medium').toLowerCase(), chapter: get('chapter', 'प्रकरण'), topic: get('topic', 'प्रकरण'),
+      difficulty: (get('difficulty') || 'medium').toLowerCase(), chapter: shiftedWithoutChapter ? '' : chapterValue, topic: get('topic', 'प्रकरण'),
       questionType: get('questiontype') || 'MCQ', questionImage: get('questionimage'), option1Image: get('option1image'),
       option2Image: get('option2image'), option3Image: get('option3image'), option4Image: get('option4image'),
       explanationImage: get('explanationimage'), status: (get('status') || 'published').toLowerCase(),
