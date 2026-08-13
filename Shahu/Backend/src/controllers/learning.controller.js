@@ -713,7 +713,10 @@ const previewQuestions = asyncHandler(async (req, res) => {
     const normalizedOptions = normalizedOptionSignature({
       A: data.optionA, B: data.optionB, C: data.optionC, D: data.optionD,
     });
-    const duplicateKey = `${String(data.subject)}:${normalized}:${normalizedOptions}`;
+    // Within one workbook, a question is accepted once only. Its first row is
+    // retained and later occurrences are silently ignored, even when a later
+    // row changes the option wording.
+    const duplicateKey = `${String(data.subject)}:${normalized}`;
     const duplicateInUpload = seen.has(duplicateKey);
     seen.add(duplicateKey);
     // Do not surface validation errors for a repeated question/options row:
@@ -835,18 +838,16 @@ const previewQuestions = asyncHandler(async (req, res) => {
         subject: row.data.subject,
         normalizedText: row.data.normalizedText,
       })),
-    }).select('subject normalizedText normalizedOptions options');
+    }).select('subject normalizedText');
     matches.forEach((item) => {
-      const options = Object.fromEntries((item.options || []).map((option) => [option.key, option.text]));
-      const signature = item.normalizedOptions || normalizedOptionSignature(options);
-      existing.add(`${String(item.subject)}:${item.normalizedText}:${signature}`);
+      existing.add(`${String(item.subject)}:${item.normalizedText}`);
     });
   }
   rows.forEach((row) => {
-    if (existing.has(`${String(row.data.subject)}:${row.data.normalizedText}:${row.data.normalizedOptions}`)) {
+    if (existing.has(`${String(row.data.subject)}:${row.data.normalizedText}`)) {
       row.valid = false;
       row.skipped = true;
-      row.validationErrors.push('Question already exists for this subject');
+      row.validationErrors = [];
     }
   });
   const validRows = rows.filter((row) => row.valid).length;

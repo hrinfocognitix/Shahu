@@ -207,9 +207,9 @@ describe('course purchase lifecycle (isolated Mongo replica set)', () => {
       });
 
     expect(preview.status).toBe(200);
-    expect(preview.body.data).toMatchObject({ totalRows: 3, validRows: 2, invalidRows: 1, status: 'previewed' });
+    expect(preview.body.data).toMatchObject({ totalRows: 3, validRows: 1, invalidRows: 1, duplicateRows: 1, status: 'previewed' });
     uploadedFiles.push(preview.body.data.storedFilename);
-    expect(preview.body.data.rows.some((row) => row.skipped)).toBe(false);
+    expect(preview.body.data.rows.some((row) => row.rowNumber === 3)).toBe(false);
 
     const confirmed = await request(app)
       .post(`/api/v1/learning/questions/import/${preview.body.data._id}`)
@@ -219,9 +219,9 @@ describe('course purchase lifecycle (isolated Mongo replica set)', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(confirmed.status).toBe(200);
-    expect(confirmed.body.data).toEqual({ imported: 2, rejected: 1 });
+    expect(confirmed.body.data).toEqual({ imported: 1, rejected: 1 });
     expect(repeated.status).toBe(409);
-    expect(await Question.countDocuments({ course: course._id, subject: subject._id })).toBe(2);
+    expect(await Question.countDocuments({ course: course._id, subject: subject._id })).toBe(1);
     expect(await QuestionImport.countDocuments({ _id: preview.body.data._id, status: 'imported' })).toBe(1);
     expect(await AuditLog.countDocuments({ action: 'questions_imported', recordId: preview.body.data._id })).toBe(1);
   });
