@@ -209,8 +209,7 @@ describe('course purchase lifecycle (isolated Mongo replica set)', () => {
     expect(preview.status).toBe(200);
     expect(preview.body.data).toMatchObject({ totalRows: 3, validRows: 2, invalidRows: 1, status: 'previewed' });
     uploadedFiles.push(preview.body.data.storedFilename);
-    const differentOptionsRow = preview.body.data.rows.find((row) => row.rowNumber === 3);
-    expect(differentOptionsRow.valid).toBe(true);
+    expect(preview.body.data.rows.some((row) => row.skipped)).toBe(false);
 
     const confirmed = await request(app)
       .post(`/api/v1/learning/questions/import/${preview.body.data._id}`)

@@ -844,9 +844,10 @@ const previewQuestions = asyncHandler(async (req, res) => {
     invalidRows: rows.length - validRows - duplicateRows,
     duplicateRows,
     hasExternalRows: true,
-    // The response keeps a compact preview for the portal; all import rows are
-    // stored separately so a 100,000-question paper remains valid in MongoDB.
-    rows: rows.slice(0, PREVIEW_ROW_SAMPLE_SIZE),
+    // Do not display identical question-and-option duplicates in the portal
+    // preview. They remain marked as skipped in the import audit rows and are
+    // never inserted into Question.
+    rows: rows.filter((row) => !row.skipped).slice(0, PREVIEW_ROW_SAMPLE_SIZE),
     createdBy: req.user._id,
   });
   try {
