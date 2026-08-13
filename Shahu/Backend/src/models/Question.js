@@ -6,6 +6,8 @@ const schema = new mongoose.Schema(
     subject: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: true, index: true },
     questionText: { type: String, required: true, trim: true },
     normalizedText: { type: String, required: true, index: true },
+    // The same wording is allowed when its set of answer options differs.
+    normalizedOptions: { type: String, required: true, index: true },
     options: [
       {
         key: { type: String, enum: ['A', 'B', 'C', 'D'], required: true },
@@ -35,6 +37,12 @@ const schema = new mongoose.Schema(
 );
 schema.plugin(auditPlugin);
 schema.pre('validate', function validateOptions() {
+  if (!this.normalizedOptions) {
+    const byKey = Object.fromEntries((this.options || []).map((option) => [option.key, option.text]));
+    this.normalizedOptions = ['A', 'B', 'C', 'D']
+      .map((key) => String(byKey[key] || '').trim().replace(/\s+/g, ' ').toLowerCase())
+      .join('\u001f');
+  }
   const keys = (this.options || []).map((option) => option.key);
   if (keys.length < 2) this.invalidate('options', 'At least two answer options are required');
   if (new Set(keys).size !== keys.length)
@@ -42,5 +50,5 @@ schema.pre('validate', function validateOptions() {
   if (this.correctOption && !keys.includes(this.correctOption))
     this.invalidate('correctOption', 'Correct option must match an available answer option');
 });
-schema.index({ course: 1, subject: 1, normalizedText: 1 }, { unique: true });
+schema.index({ course: 1, subject: 1, normalizedText: 1, normalizedOptions: 1 }, { unique: true });
 module.exports = mongoose.model('Question', schema);

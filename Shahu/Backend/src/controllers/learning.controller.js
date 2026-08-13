@@ -75,6 +75,10 @@ const normalizeQuestion = (value) =>
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase();
+const normalizedOptionSignature = (options) =>
+  ['A', 'B', 'C', 'D']
+    .map((key) => normalizeQuestion(options?.[key]))
+    .join('\u001f');
 // Old uploads from browsers that sent UTF-8 filenames as Latin-1 can appear
 // as "à¤—...". Repair only that recognizable mojibake pattern for display.
 const readableFilename = (value) => {
@@ -689,10 +693,13 @@ const previewQuestions = asyncHandler(async (req, res) => {
     if (wordCount(data.explanation) > 50) errors.push('Justification must be 50 words or fewer');
     if (!['easy', 'medium', 'hard'].includes(data.difficulty)) errors.push('Difficulty must be easy, medium, or hard');
     if (!['published', 'draft', 'archived'].includes(data.status)) errors.push('Status must be published, draft, or archived');
-    const duplicateKey = `${String(data.subject)}:${normalized}`;
+    const normalizedOptions = normalizedOptionSignature({
+      A: data.optionA, B: data.optionB, C: data.optionC, D: data.optionD,
+    });
+    const duplicateKey = `${String(data.subject)}:${normalized}:${normalizedOptions}`;
     const duplicateInUpload = seen.has(duplicateKey);
     seen.add(duplicateKey);
-    rows.push({ rowNumber: number, data: { ...data, normalizedText: normalized }, valid: !errors.length && !duplicateInUpload, skipped: duplicateInUpload, validationErrors: errors });
+    rows.push({ rowNumber: number, data: { ...data, normalizedText: normalized, normalizedOptions }, valid: !errors.length && !duplicateInUpload, skipped: duplicateInUpload, validationErrors: errors });
   };
   logger.info('Mock-test spreadsheet source-file reading started', uploadMeta);
   try {
@@ -809,12 +816,17 @@ const previewQuestions = asyncHandler(async (req, res) => {
         subject: row.data.subject,
         normalizedText: row.data.normalizedText,
       })),
-    }).select('subject normalizedText');
-    matches.forEach((item) => existing.add(`${String(item.subject)}:${item.normalizedText}`));
+    }).select('subject normalizedText normalizedOptions options');
+    matches.forEach((item) => {
+      const options = Object.fromEntries((item.options || []).map((option) => [option.key, option.text]));
+      const signature = item.normalizedOptions || normalizedOptionSignature(options);
+      existing.add(`${String(item.subject)}:${item.normalizedText}:${signature}`);
+    });
   }
   rows.forEach((row) => {
-    if (existing.has(`${String(row.data.subject)}:${row.data.normalizedText}`)) {
+    if (existing.has(`${String(row.data.subject)}:${row.data.normalizedText}:${row.data.normalizedOptions}`)) {
       row.valid = false;
+      row.skipped = true;
       row.validationErrors.push('Question already exists for this subject');
     }
   });
@@ -888,6 +900,7 @@ const confirmQuestions = asyncHandler(async (req, res) => {
       subject: d.subject || batch.subject,
       questionText: d.questionText,
       normalizedText: d.normalizedText,
+      normalizedOptions: d.normalizedOptions,
       options: [
         ['A', d.optionA],
         ['B', d.optionB],

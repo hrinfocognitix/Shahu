@@ -15,6 +15,8 @@
     "seed:admin": "node src/scripts/seedAdmin.js",
     "migrate:learning-files:check": "node src/scripts/migrateLearningFiles.js",
     "migrate:learning-files:apply": "node src/scripts/migrateLearningFiles.js --apply",
+    "migrate:question-options:check": "node src/scripts/migrateQuestionOptionSignatures.js",
+    "migrate:question-options:apply": "node src/scripts/migrateQuestionOptionSignatures.js --apply",
     "migrate:academy:check": "node src/scripts/migrateAcademyData.js",
     "migrate:academy:apply": "node src/scripts/migrateAcademyData.js --apply",
     "lint": "eslint .",
