@@ -68,6 +68,13 @@ export function Learning() {
   const [previewItem, setPreviewItem] = useState(null);
   const [previewZoom, setPreviewZoom] = useState(1);
 
+  // The Course → Syllabus button can navigate here while this screen is
+  // already mounted. Keep the selectors in sync with its course/subject URL.
+  useEffect(() => {
+    setCourse(searchParams.get('course') || '');
+    setSubject(searchParams.get('subject') || '');
+  }, [searchParams]);
+
   const previewUrl = previewItem ? resolveAssetUrl(previewItem.previewUrl) : '';
   const previewType = String(previewItem?.previewMimeType || previewItem?.mimeType || '').toLowerCase();
 
@@ -154,11 +161,18 @@ export function Learning() {
     () => courses.find((item) => item._id === course)?.name || 'Selected course',
     [course, courses],
   );
+  const selectedCourseCode = useMemo(
+    () => {
+      const selected = courses.find((item) => item._id === course);
+      return selected?.courseCode || selected?.courseId || '';
+    },
+    [course, courses],
+  );
   const selectedSubjectName = useMemo(
     () => subjects.find((item) => item._id === subject)?.name || 'Selected subject',
     [subject, subjects],
   );
-  const materialDestination = `${selectedCourseName} · ${selectedSubjectName}`;
+  const materialDestination = `${selectedCourseName}${selectedCourseCode ? ` (${selectedCourseCode})` : ''} · ${selectedSubjectName}`;
   const savedNoteCount = useMemo(
     () => items.filter((item) => item.materialType === 'notes').length,
     [items],
@@ -516,7 +530,11 @@ export function Learning() {
             }}
           >
             <option value="">Select course</option>
-            {courses.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+            {courses.map((item) => (
+              <option key={item._id} value={item._id}>
+                {item.name} {item.courseCode || item.courseId ? `· ${item.courseCode || item.courseId}` : ''}
+              </option>
+            ))}
           </select>
         </label>
         <label>
