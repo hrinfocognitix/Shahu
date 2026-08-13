@@ -174,6 +174,14 @@ async function assertCourseSubject(courseId, subjectId) {
     throw new AppError('The selected subject is not assigned to this course', STATUS_CODES.BAD_REQUEST);
   }
 }
+async function assertMockTestSubjectAvailable(subjectId) {
+  const subject = await Subject.exists({
+    _id: subjectId,
+    status: 'active',
+    isDeleted: { $ne: true },
+  });
+  if (!subject) throw new AppError('This mock test is no longer available', STATUS_CODES.NOT_FOUND);
+}
 
 async function assertSubjectExists(subjectId) {
   if (!subjectId) throw new AppError('A subject is required', STATUS_CODES.BAD_REQUEST);
@@ -1065,8 +1073,14 @@ const listQuestions = asyncHandler(async (req, res) => {
 });
 const listMockTests = asyncHandler(async (req, res) => {
   await assertEnrollment(req, req.query.course);
-  const filter = { course: req.query.course, status: 'imported' };
-  if (req.query.subject) filter.subject = req.query.subject;
+  const activeSubjects = await Subject.find({ status: 'active', isDeleted: { $ne: true } }).distinct('_id');
+  const filter = { course: req.query.course, subject: { $in: activeSubjects }, status: 'imported' };
+  if (req.query.subject) {
+    if (!activeSubjects.some((id) => String(id) === String(req.query.subject))) {
+      return apiResponse.success(res, { message: 'Mock tests fetched', data: [] });
+    }
+    filter.subject = req.query.subject;
+  }
   const items = await QuestionImport.find(filter)
     .populate('subject', 'name subjectCode')
     .sort({ importedAt: -1, createdAt: -1 })
@@ -1079,6 +1093,7 @@ const listMockTests = asyncHandler(async (req, res) => {
 const mockTestQuestions = asyncHandler(async (req, res) => {
   const test = await QuestionImport.findById(req.params.id);
   if (!test || test.status !== 'imported') throw new AppError('Mock test not found', 404);
+  await assertMockTestSubjectAvailable(test.subject);
   await assertEnrollment(req, test.course);
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
@@ -1100,6 +1115,7 @@ const mockTestQuestions = asyncHandler(async (req, res) => {
 const mockTestProgress = asyncHandler(async (req, res) => {
   const test = await QuestionImport.findById(req.params.id);
   if (!test || test.status !== 'imported') throw new AppError('Mock test not found', 404);
+  await assertMockTestSubjectAvailable(test.subject);
   await assertEnrollment(req, test.course);
   const attempts = await QuestionAttempt.find({ student: req.user._id, mockTest: test._id, mockPage: { $exists: true } })
     .select('mockPage score maximumScore submittedAt updatedAt')
@@ -1123,6 +1139,16 @@ const submitAnswers = asyncHandler(async (req, res) => {
   const mockPage = Math.max(1, Number.parseInt(req.body.mockPage, 10) || 0);
   if (isMockTestAttempt && submittedAnswers.length > 20) {
     throw new AppError('A mock-test page can contain a maximum of 20 answers', 400);
+  }
+  if (isMockTestAttempt) {
+    const test = await QuestionImport.findOne({
+      _id: req.body.mockTest,
+      course: req.body.course,
+      subject: req.body.subject,
+      status: 'imported',
+    }).select('subject');
+    if (!test) throw new AppError('Mock test not found', STATUS_CODES.NOT_FOUND);
+    await assertMockTestSubjectAvailable(test.subject);
   }
   const ids = submittedAnswers.map((answer) => String(answer.question));
   if (new Set(ids).size !== ids.length)
