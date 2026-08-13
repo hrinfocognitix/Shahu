@@ -250,11 +250,19 @@ const listLearningFiles = asyncHandler(async (req, res) => {
     filter.course = { $exists: false };
     filter.category = 'syllabus-copy';
   } else if (req.query.course) {
-    // Subject-level syllabus becomes available as soon as the subject is
-    // attached to this course, without a second upload.
+    // Subject-level syllabus becomes available as soon as its subject is
+    // attached to this course, without a second upload. Limit the fallback
+    // to that course's subjects so a student does not receive unrelated
+    // subject-level syllabuses.
+    const course = await Course.findById(req.query.course).select('subjects');
+    const subjectIds = course?.subjects || [];
     filter.$or = [
       { course: req.query.course },
-      { course: { $exists: false }, category: 'syllabus-copy' },
+      {
+        course: { $exists: false },
+        category: 'syllabus-copy',
+        subject: { $in: subjectIds },
+      },
     ];
   }
   if (req.query.subject) filter.subject = req.query.subject;

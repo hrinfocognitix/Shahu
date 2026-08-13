@@ -670,15 +670,33 @@ const myStudentProfile = asyncHandler(async (req, res) => {
     .filter((enrollment) => enrollment.status === 'active' && enrollment.remainingDays > 0)
     .map((enrollment) => enrollment.course?._id || enrollment.course)
     .filter(Boolean);
-  const [fileCategories, hasMockTests] = activeCourseIds.length
+  // A syllabus may be uploaded for a subject before that subject is attached
+  // to a course. Include those subject-level syllabus files when deciding
+  // which material tabs Android should show; otherwise the app never exposes
+  // its Syllabus tab even though the upload was successful.
+  const activeSubjectIds = enrollmentData
+    .filter((enrollment) => enrollment.status === 'active' && enrollment.remainingDays > 0)
+    .flatMap((enrollment) => enrollment.course?.subjects || [])
+    .map((subject) => subject?._id || subject)
+    .filter(Boolean);
+  const [fileCategories, hasSubjectSyllabus, hasMockTests] = activeCourseIds.length
     ? await Promise.all([
       LearningFile.distinct('category', { course: { $in: activeCourseIds }, status: 'published', isDeleted: { $ne: true } }),
+      activeSubjectIds.length
+        ? LearningFile.exists({
+          course: { $exists: false },
+          subject: { $in: activeSubjectIds },
+          category: 'syllabus-copy',
+          status: 'published',
+          isDeleted: { $ne: true },
+        })
+        : false,
       QuestionImport.exists({ course: { $in: activeCourseIds }, status: 'imported' }),
     ])
-    : [[], false];
+    : [[], false, false];
   const materialCategories = hasMockTests
-    ? [...new Set([...fileCategories, 'mock-test'])]
-    : fileCategories;
+    ? [...new Set([...fileCategories, ...(hasSubjectSyllabus ? ['syllabus-copy'] : []), 'mock-test'])]
+    : [...new Set([...fileCategories, ...(hasSubjectSyllabus ? ['syllabus-copy'] : [])])];
   return apiResponse.success(res, {
     message: 'Student profile and purchases fetched',
     data: { student: req.user, enrollments: enrollmentData, transactions, devices, materialCategories },
