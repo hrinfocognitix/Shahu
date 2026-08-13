@@ -166,20 +166,8 @@ export function Subjects() {
               <button className="text-button" onClick={() => openMaterialWorkspace(item)}>
                 <FiBookOpen /> Syllabus
               </button>
-              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'notes')}>
-                <FiFile /> Notes
-              </button>
-              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'generated-questions')}>
-                <FiFile /> Questions
-              </button>
-              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'question-paper')}>
-                <FiFile /> Old papers
-              </button>
               <button className="text-button" onClick={() => openMockTest(item)}>
                 <FiUpload /> Mock test
-              </button>
-              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'other')}>
-                <FiFile /> Other
               </button>
               <button className="text-button" onClick={() => openEditForm(item)}>
                 <FiEdit2 /> Edit
@@ -190,6 +178,13 @@ export function Subjects() {
               >
                 <FiTrash2 /> Delete
               </button>
+            </div>
+            <div className="subject-material-actions">
+              <span><FiFile /> Add material</span>
+              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'notes')}>Notes</button>
+              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'generated-questions')}>Questions</button>
+              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'question-paper')}>Old papers</button>
+              <button className="text-button" onClick={() => openMaterialWorkspace(item, 'other')}>Other</button>
             </div>
           </article>
         ))}

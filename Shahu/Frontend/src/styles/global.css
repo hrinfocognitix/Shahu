@@ -885,7 +885,11 @@ button:disabled { box-shadow: none; }
 .subject-code-hint { margin: 0; padding: .75rem; border-radius: 9px; color: var(--text-secondary); background: var(--cream); font-size: .82rem; line-height: 1.45; }
 .subject-code { display: inline-flex; align-items: center; gap: .45rem; color: var(--text-primary); }
 .subject-color-dot { display: inline-block; width: .75rem; height: .75rem; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px var(--sand); }
-.subject-card-actions { display: flex; gap: .85rem; align-items: center; }
+.subject-card-actions { display: flex; flex-wrap: wrap; gap: .35rem .75rem; align-items: center; }
+.subject-card-actions .text-button { white-space: nowrap; }
+.subject-material-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .65rem; padding-top: .6rem; border-top: 1px solid var(--beige); }
+.subject-material-actions > span { display: inline-flex; align-items: center; gap: .3rem; color: var(--text-muted); font-size: .72rem; font-weight: 800; white-space: nowrap; }
+.subject-material-actions .text-button { color: var(--text-accent); font-size: .74rem; white-space: nowrap; }
 .mock-test-upload-modal { position: relative; width: min(620px, 100%); max-height: calc(100vh - 2rem); overflow: auto; padding: 2rem; }
 .mock-test-preview { display: grid; gap: .75rem; padding: .8rem; border-radius: 10px; background: var(--cream); }.mock-test-preview ul { max-height: 130px; overflow: auto; margin: 0; padding-left: 1.2rem; color: var(--error); }
 .mock-test-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
