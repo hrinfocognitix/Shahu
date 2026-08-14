@@ -408,9 +408,9 @@ const removeCoursePayload = async (request) => {
     status: 'active',
     validUntil: { $gte: new Date() },
   });
-  if (activeEnrollment) {
+  if (activeEnrollment && request.user.role !== ROLES.SUPERADMIN) {
     throw new AppError(
-      'This course has active student enrollments. Set the course inactive instead of deleting it.',
+      'This course has active student enrollments. Only a superadmin can archive it.',
       STATUS_CODES.CONFLICT
     );
   }
@@ -499,7 +499,13 @@ module.exports = [
         beforeRemove: removeCoursePayload,
         beforePermanentRemove: preventReferencedCoursePermanentDelete,
       }),
-      { publicRead: true, writeRoles: courseWriteRoles }
+      {
+        publicRead: true,
+        writeRoles: courseWriteRoles,
+        // Restoring a course changes student-facing access, so this is kept
+        // exclusively with the superadmin lifecycle controls.
+        restoreRoles: [ROLES.SUPERADMIN],
+      }
     ),
   ],
   [

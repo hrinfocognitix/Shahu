@@ -4,6 +4,7 @@ import { FiBookOpen, FiEdit2, FiEye, FiPlus, FiSend, FiTrash2, FiUsers, FiX } fr
 import { toast } from 'react-toastify';
 import { apiClient } from '../../api/axios';
 import { environment } from '../../config/environment';
+import { useAuth } from '../../hooks/useAuth';
 
 const labels = {
   courses: 'Courses',
@@ -131,6 +132,7 @@ const validityLabel = (enrollment) => {
 
 export function Management({ resource }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [courses, setCourses] = useState([]);
   const [paymentAccounts, setPaymentAccounts] = useState([]);
@@ -150,7 +152,9 @@ export function Management({ resource }) {
   const load = async () => {
     setLoading(true);
     try {
-      const requests = [apiClient.get(`/${resource}`, { params: { limit: 100 } })];
+      const requests = [apiClient.get(`/${resource}`, {
+        params: { limit: 100, ...(isCourse ? { deleted: 'all' } : {}) },
+      })];
       if (!isCourse && !isPurchases)
         requests.push(apiClient.get('/courses', { params: { limit: 100 } }));
       const [response, courseResponse] = await Promise.all(requests);
@@ -481,6 +485,34 @@ export function Management({ resource }) {
     }
   };
 
+  const restoreCourse = async (course) => {
+    if (!window.confirm(`Restore “${course.name}”? It will return to the course list with its previous status.`)) return;
+    try {
+      await apiClient.patch(`/courses/${course._id}/restore`);
+      toast.success('Course restored');
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to restore course');
+    }
+  };
+
+  const permanentlyDeleteCourse = async (course) => {
+    const confirmation = window.prompt(
+      `This permanently deletes “${course.name}”, including enrollments, purchases, learning data, and related records. Type DELETE COURSE to continue.`,
+    );
+    if (String(confirmation || '').trim().replace(/\s+/g, ' ').toUpperCase() !== 'DELETE COURSE') {
+      toast.error('Course was not permanently deleted. Type DELETE COURSE to confirm.');
+      return;
+    }
+    try {
+      const response = await apiClient.delete(`/system-data/courses/${course._id}`, { data: { confirmation } });
+      toast.success(response.data.message || 'Course permanently deleted');
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to permanently delete course');
+    }
+  };
+
   const publishCourse = async (course) => {
     if (!window.confirm(`Publish “${course.name}” and notify all users?`)) return;
     try {
@@ -623,32 +655,38 @@ export function Management({ resource }) {
                   </>
                 )}
               </div>
-              <span className={`status-pill ${isCourse && item.isPublished === false ? 'inactive' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : String(item.status || 'active').toLowerCase()}`}>
-                {isCourse && item.isPublished === false ? 'Draft' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'Disabled course' : item.status || 'active'}
+              <span className={`status-pill ${item.isDeleted || (isCourse && item.isPublished === false) ? 'inactive' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : String(item.status || 'active').toLowerCase()}`}>
+                {item.isDeleted ? 'Archived course' : isCourse && item.isPublished === false ? 'Draft' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'Disabled course' : item.status || 'active'}
               </span>
               {!isPurchases && (
                 <div className="row-actions">
                   {isCourse ? (
                     <>
-                      {item.isPublished === false ? (
+                      {!item.isDeleted && item.isPublished === false ? (
                         <button className="text-button" onClick={() => publishCourse(item)}>
                           <FiSend /> Publish course
                         </button>
                       ) : null}
-                      <button className="text-button" onClick={() => navigate(`/learning?course=${item._id}`)}>
+                      {!item.isDeleted ? <button className="text-button" onClick={() => navigate(`/learning?course=${item._id}`)}>
                         <FiBookOpen /> Syllabus
-                      </button>
-                      <button className="text-button" onClick={() => navigate(`/students?course=${item._id}`)}>
+                      </button> : null}
+                      {!item.isDeleted ? <button className="text-button" onClick={() => navigate(`/students?course=${item._id}`)}>
                         <FiUsers /> Users
-                      </button>
+                      </button> : null}
                     </>
                   ) : null}
-                  <button className="text-button" onClick={() => beginEdit(item)}>
+                  {!item.isDeleted ? <button className="text-button" onClick={() => beginEdit(item)}>
                     <FiEdit2 /> Edit
-                  </button>
-                  <button className="text-button danger" onClick={() => remove(item)}>
+                  </button> : null}
+                  {isCourse && item.isDeleted && user?.role === 'superadmin' ? <button className="text-button" onClick={() => restoreCourse(item)}>
+                    Restore
+                  </button> : null}
+                  {!item.isDeleted ? <button className="text-button danger" onClick={() => remove(item)}>
                     <FiTrash2 /> Delete
-                  </button>
+                  </button> : null}
+                  {isCourse && user?.role === 'superadmin' ? <button className="text-button danger" onClick={() => permanentlyDeleteCourse(item)}>
+                    <FiTrash2 /> Delete permanently
+                  </button> : null}
                 </div>
               )}
             </article>

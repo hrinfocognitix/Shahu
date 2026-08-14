@@ -5,7 +5,12 @@ const { ROLES } = require('../constants/roles');
 
 function createResourceRouter(
   controller,
-  { publicRead = false, writeRoles = [ROLES.ADMIN, ROLES.SUPERADMIN], permanentRemoveRoles = [ROLES.SUPERADMIN] } = {}
+  {
+    publicRead = false,
+    writeRoles = [ROLES.ADMIN, ROLES.SUPERADMIN],
+    restoreRoles = writeRoles,
+    permanentRemoveRoles = [ROLES.SUPERADMIN],
+  } = {}
 ) {
   const router = express.Router();
   if (publicRead) router.get('/', controller.list);
@@ -14,7 +19,7 @@ function createResourceRouter(
   router.get('/:id', controller.get);
   router.post('/', authorize(...writeRoles), controller.create);
   router.patch('/:id', authorize(...writeRoles), controller.update);
-  router.patch('/:id/restore', authorize(...writeRoles), controller.restore);
+  router.patch('/:id/restore', authorize(...restoreRoles), controller.restore);
   router.delete('/:id', authorize(...writeRoles), controller.remove);
   router.delete('/:id/permanent', authorize(...permanentRemoveRoles), controller.permanentRemove);
   return router;
