@@ -144,6 +144,17 @@ async function assertEnrollment(req, courseId) {
     throw new AppError('An active course enrollment is required', STATUS_CODES.FORBIDDEN);
 }
 async function assertStudentLearningFileAccess(userId, item) {
+  // A learning file retains its subject reference after that subject is
+  // archived. Do not let an already-issued Android preview/download URL keep
+  // that material available to students.
+  const subjectIsAvailable = await Subject.exists({
+    _id: item.subject,
+    status: 'active',
+    isDeleted: { $ne: true },
+  });
+  if (!subjectIsAvailable) {
+    throw new AppError('This subject is no longer available', STATUS_CODES.NOT_FOUND);
+  }
   const accessWindow = {
     student: userId,
     status: 'active',
@@ -286,7 +297,18 @@ const listLearningFiles = asyncHandler(async (req, res) => {
     // to that course's subjects so a student does not receive unrelated
     // material.
     const course = await Course.findById(req.query.course).select('subjects');
-    const subjectIds = course?.subjects || [];
+    const assignedSubjectIds = course?.subjects || [];
+    // Files are not automatically deleted when their subject is archived.
+    // Resolve the live Subject records here so the Android API cannot return
+    // PDFs belonging to an archived/deleted subject.
+    const subjectIds = assignedSubjectIds.length
+      ? await Subject.find({
+        _id: { $in: assignedSubjectIds },
+        status: 'active',
+        isDeleted: { $ne: true },
+      }).distinct('_id')
+      : [];
+    if (req.user.role === ROLES.STUDENT) filter.subject = { $in: subjectIds };
     filter.$or = [
       { course: req.query.course },
       {
