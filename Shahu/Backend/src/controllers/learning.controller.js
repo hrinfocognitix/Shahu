@@ -1130,7 +1130,7 @@ const listMockTests = asyncHandler(async (req, res) => {
   const items = await QuestionImport.find(filter)
     .populate('subject', 'name subjectCode')
     .sort({ importedAt: -1, createdAt: -1 })
-    .select('course subject originalFilename totalRows validRows importedAt createdAt');
+    .select('course subject originalFilename totalRows validRows invalidRows duplicateRows importedAt createdAt');
   return apiResponse.success(res, {
     message: 'Mock tests fetched',
     data: items.map((item) => ({ ...item.toObject(), originalFilename: readableFilename(item.originalFilename) })),

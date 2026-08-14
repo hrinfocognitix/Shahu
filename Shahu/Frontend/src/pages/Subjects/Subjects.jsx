@@ -20,7 +20,7 @@ export function Subjects() {
   const [mockTestSubject, setMockTestSubject] = useState(null);
   const mockTestFileInput = useRef(null);
   const [courses, setCourses] = useState([]);
-  const [mockTest, setMockTest] = useState({ course: '', file: null, preview: null, loading: false });
+  const [mockTest, setMockTest] = useState({ course: '', file: null, preview: null, loading: false, imports: [], importsLoading: false });
 
   const load = async () => {
     const response = await apiClient.get('/subjects', { params: { limit: 100 } });
@@ -87,7 +87,7 @@ export function Subjects() {
   };
   const openMockTest = async (subject) => {
     setMockTestSubject(subject);
-    setMockTest({ course: '', file: null, preview: null, loading: false });
+    setMockTest({ course: '', file: null, preview: null, loading: false, imports: [], importsLoading: false });
     try {
       const response = await apiClient.get('/courses', { params: { limit: 100 } });
       setCourses((response.data.data || []).filter((course) =>
@@ -96,6 +96,17 @@ export function Subjects() {
       ));
     } catch {
       toast.error('Unable to load courses for this subject');
+    }
+  };
+  const loadMockTestHistory = async (courseId, subjectId) => {
+    if (!courseId || !subjectId) return;
+    setMockTest((current) => ({ ...current, importsLoading: true }));
+    try {
+      const response = await apiClient.get('/learning/mock-tests', { params: { course: courseId, subject: subjectId } });
+      setMockTest((current) => ({ ...current, imports: response.data.data || [], importsLoading: false }));
+    } catch (error) {
+      setMockTest((current) => ({ ...current, imports: [], importsLoading: false }));
+      toast.error(error.response?.data?.message || 'Unable to load uploaded mock tests');
     }
   };
   const downloadTemplate = async () => {
@@ -128,7 +139,8 @@ export function Subjects() {
     try {
       const response = await apiClient.post(`/learning/questions/import/${mockTest.preview._id}`, {}, { timeout: 10 * 60 * 1000 });
       toast.success(response.data.message || 'Mock test imported');
-      setMockTestSubject(null);
+      setMockTest((current) => ({ ...current, file: null, preview: null }));
+      await loadMockTestHistory(mockTest.course, mockTestSubject._id);
     } catch (error) { toast.error(error.response?.data?.message || 'Unable to import mock test'); }
   };
 
@@ -260,7 +272,8 @@ export function Subjects() {
             <h2>Upload questions for {mockTestSubject.name}</h2>
             <p className="subject-code-hint">Use the Marathi template columns exactly: क्रमांक, प्रकरण, प्रश्न, पर्याय अ, पर्याय ब, पर्याय क, पर्याय ड, योग्य उत्तर, स्पष्टीकरण. In योग्य उत्तर, enter अ, ब, क, ड, the full option text, or A–D.</p>
             <button className="text-button" onClick={downloadTemplate} type="button"><FiDownload /> Download Excel template</button>
-            <label><span>Course</span><select required value={mockTest.course} onChange={(event) => setMockTest((current) => ({ ...current, course: event.target.value, preview: null }))}><option value="">Select course</option>{courses.map((course) => <option key={course._id} value={course._id}>{course.name}</option>)}</select></label>
+            <label><span>Course</span><select required value={mockTest.course} onChange={(event) => { const courseId = event.target.value; setMockTest((current) => ({ ...current, course: courseId, preview: null, imports: courseId ? current.imports : [] })); void loadMockTestHistory(courseId, mockTestSubject._id); }}><option value="">Select course</option>{courses.map((course) => <option key={course._id} value={course._id}>{course.name}</option>)}</select></label>
+            {mockTest.course ? <section className="mock-test-history"><h3>Uploaded mock tests</h3>{mockTest.importsLoading ? <p className="muted">Loading uploaded tests…</p> : mockTest.imports.length ? <div className="mock-test-history-list">{mockTest.imports.map((item) => <article key={item._id}><strong>{item.originalFilename || 'Mock test'}</strong><small>Uploaded: {new Date(item.importedAt || item.createdAt).toLocaleString('en-IN')}</small><span>Total questions uploaded: {Number(item.totalRows || 0)}</span><span>Accepted questions: {Number(item.validRows || 0)}</span><span>Duplicate questions: {Number(item.duplicateRows || 0)}</span></article>)}</div> : <p className="muted">No mock tests uploaded for this course and subject yet.</p>}</section> : null}
             <label><span>Excel or CSV file (.xlsx, .csv)</span><input aria-hidden="true" className="mock-test-file-input" ref={mockTestFileInput} tabIndex={-1} type="file" onChange={(event) => setMockTest((current) => ({ ...current, file: event.target.files?.[0] || null, preview: null }))} /><button className="btn mock-test-file-button" onClick={() => mockTestFileInput.current?.click()} type="button"><FiUpload /> Choose file from Mac</button><b className="mock-test-file-name">{mockTest.file?.name || 'No file selected'}</b><small>Browse any file, then the app checks that it is .xlsx or .csv. Mac Numbers files must be exported first: File → Export To → Excel or CSV.</small></label>
             {!mockTest.preview ? <button className="btn btn-primary" disabled={mockTest.loading}>{mockTest.loading ? 'Checking file…' : 'Validate questions'}</button> : <div className="mock-test-preview"><b>Total questions: {mockTest.preview.totalRows} · Accepted: {mockTest.preview.validRows} · Duplicate questions ignored: {mockTest.preview.duplicateRows || 0} · Rejected: {mockTest.preview.invalidRows}</b>{mockTest.preview.invalidRows ? <ul>{mockTest.preview.rows.filter((row) => !row.valid && !row.skipped && row.validationErrors?.length).slice(0, 5).map((row) => <li key={row.rowNumber}>Row {row.rowNumber}: {row.validationErrors.join(', ')}</li>)}</ul> : null}<button className="btn btn-primary" onClick={importMockTest} type="button">Save accepted questions</button></div>}
           </form>
