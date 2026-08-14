@@ -51,8 +51,32 @@ function uploadBuffer(file, { folder = 'shahu-academy' } = {}) {
 }
 
 async function destroyAsset(publicId, resourceType = 'image') {
-  if (!publicId || !isConfigured()) return;
-  await cloudinary.uploader.destroy(publicId, { resource_type: resourceType, invalidate: true });
+  requireConfiguration();
+  if (!publicId) {
+    const error = new Error('Cloudinary public ID is required to delete this file');
+    error.statusCode = 409;
+    throw error;
+  }
+  let response;
+  try {
+    response = await cloudinary.uploader.destroy(publicId, {
+      resource_type: resourceType || 'image',
+      invalidate: true,
+    });
+  } catch (error) {
+    error.statusCode = error.http_code || error.statusCode || 502;
+    error.message = `Cloudinary deletion failed: ${error.message || 'Unknown Cloudinary error'}`;
+    throw error;
+  }
+
+  // Cloudinary treats a missing asset as an idempotent successful deletion:
+  // there is no remote file left to protect before removing its DB record.
+  if (response?.result === 'ok') return { status: 'deleted', response };
+  if (response?.result === 'not found') return { status: 'not_found', response };
+
+  const error = new Error(`Cloudinary deletion failed: ${response?.result || 'Unexpected response'}`);
+  error.statusCode = 502;
+  throw error;
 }
 
 module.exports = { uploadBuffer, destroyAsset };

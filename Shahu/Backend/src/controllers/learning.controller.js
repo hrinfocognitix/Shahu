@@ -568,6 +568,11 @@ const importLearningFiles = asyncHandler(async (req, res) => {
       originalFilename: file.originalFilename,
       storedFilename: file.storedFilename,
       fileUrl: file.fileUrl,
+      // Keep the Cloudinary identity with imported copies. The source asset is
+      // shared, so this metadata is needed to delete it only after its final
+      // database reference is removed.
+      publicId: file.publicId,
+      cloudinaryResourceType: file.cloudinaryResourceType,
       mimeType: file.mimeType,
       fileSize: file.fileSize,
       status: 'published',
@@ -616,16 +621,24 @@ const removeLearningFile = asyncHandler(async (req, res) => {
   const reason = String(req.body.reason || '').trim();
   if (!reason) throw new AppError('A reason is required to remove a learning file', STATUS_CODES.BAD_REQUEST);
   const previousValue = item.toObject();
+  // Imported copies share one Cloudinary object. Do not remove it while an
+  // active copy is still available in another course/subject. Otherwise the
+  // remote asset must be deleted successfully *before* its record is removed.
+  const remaining = item.publicId
+    ? await LearningFile.exists({ _id: { $ne: item._id }, publicId: item.publicId, isDeleted: { $ne: true } })
+    : null;
+  if (!remaining) {
+    if (!item.publicId) {
+      throw new AppError('This file has no Cloudinary public ID and cannot be safely deleted', STATUS_CODES.CONFLICT);
+    }
+    await destroyAsset(item.publicId, item.cloudinaryResourceType);
+  }
   item.isDeleted = true;
   item.status = 'archived';
   item.deletedAt = new Date();
   item.deletedBy = req.user._id;
   item.updatedBy = req.user._id;
   await item.save();
-  // Imported copies share one Cloudinary object. Do not remove it while an
-  // active copy is still available in another course/subject.
-  const remaining = item.publicId ? await LearningFile.exists({ _id: { $ne: item._id }, publicId: item.publicId, isDeleted: { $ne: true } }) : null;
-  if (item.publicId && !remaining) await destroyAsset(item.publicId, item.cloudinaryResourceType).catch(() => undefined);
   await AuditLog.create({
     user: req.user._id, role: req.user.role, action: 'learning_file_removed',
     module: 'learning-files', recordId: item._id, previousValue,
