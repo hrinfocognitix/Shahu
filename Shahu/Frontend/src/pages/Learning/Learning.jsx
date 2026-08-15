@@ -106,15 +106,20 @@ export function Learning() {
     }
 
     let isCurrentSelection = true;
-    apiClient
-      .get('/learning/files', { params: course ? { course, subject } : { subject, unassigned: true } })
-      .then((response) => {
+    Promise.all([
+      apiClient.get('/learning/files', { params: course ? { course, subject } : { subject, unassigned: true } }),
+      course
+        ? apiClient.get('/learning/mock-tests', { params: { course, subject } })
+        : Promise.resolve({ data: { data: [] } }),
+    ])
+      .then(([response, mockTestsResponse]) => {
         if (!isCurrentSelection) return;
         const savedTypes = [...new Set(
           (response.data.data || [])
             .map((item) => (item.category === 'syllabus-copy' ? 'syllabus' : item.category))
             .filter((type) => materialOptions.some(([key]) => key === type)),
         )];
+        if ((mockTestsResponse.data.data || []).length) savedTypes.push('mock-test');
         const requestedTypes = materialOptions.some(([type]) => type === requestedType)
           ? [requestedType]
           : [];
@@ -204,6 +209,16 @@ export function Learning() {
     try {
       const fileResponses = await Promise.all(
         selectedTypes.map(async (type) => {
+          if (type === 'mock-test') {
+            if (!course) return [];
+            const response = await apiClient.get('/learning/mock-tests', { params: { course, subject } });
+            return (response.data.data || []).map((item) => ({
+              ...item,
+              materialType: 'mock-test',
+              title: item.originalFilename || 'Mock test',
+              description: `Total questions: ${Number(item.totalRows || 0)} · Accepted: ${Number(item.validRows || 0)} · Duplicates: ${Number(item.duplicateRows || 0)}`,
+            }));
+          }
           const response = await apiClient.get('/learning/files', {
             params: course
               ? { course, subject, category: materialCategory(type) }
@@ -463,6 +478,8 @@ export function Learning() {
       toast.success(response.data.message || 'Mock test questions imported');
       setMockTestFile(null);
       setMockTestPreview(null);
+      setSelectedTypes((current) => current.includes('mock-test') ? current : [...current, 'mock-test']);
+      load();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Unable to import mock test');
     } finally {
@@ -737,19 +754,23 @@ export function Learning() {
                       </small>
                       <h3>{item.chapter || item.title}</h3>
                       <p>{item.topic || item.description || 'No description added'}</p>
-                      <small className="uploaded-file-name">File: {item.originalFilename || 'Uploaded document'}</small>
+                      <small className="uploaded-file-name">
+                        {item.materialType === 'mock-test'
+                          ? `Mock test uploaded: ${new Date(item.importedAt || item.createdAt).toLocaleString('en-IN')}`
+                          : `File: ${item.originalFilename || 'Uploaded document'} · Uploaded: ${new Date(item.createdAt).toLocaleString('en-IN')}`}
+                      </small>
                     </div>
                     {(item.previewMimeType || item.mimeType || '').startsWith('image/') && item.previewUrl ? (
                       <button aria-label={`Preview ${item.originalFilename || 'image'}`} className="learning-file-thumbnail" onClick={() => { setPreviewZoom(1); setPreviewItem(item); }} type="button">
                         <img alt={`Preview of ${item.originalFilename}`} className="learning-file-preview" src={resolveAssetUrl(item.previewUrl)} />
                       </button>
                     ) : null}
-                    {item.previewUrl ? <button className="learning-preview-button" onClick={() => { setPreviewZoom(1); setPreviewItem(item); }} type="button"><FiEye /> Preview</button> : null}
-                    {item.downloadUrl ? <a href={resolveAssetUrl(item.downloadUrl)} rel="noreferrer" target="_blank"><FiFile /> Open</a> : null}
-                    <div className="learning-row-actions">
+                    {item.materialType !== 'mock-test' && item.previewUrl ? <button className="learning-preview-button" onClick={() => { setPreviewZoom(1); setPreviewItem(item); }} type="button"><FiEye /> Preview</button> : null}
+                    {item.materialType !== 'mock-test' && item.downloadUrl ? <a href={resolveAssetUrl(item.downloadUrl)} rel="noreferrer" target="_blank"><FiFile /> Open</a> : null}
+                    {item.materialType !== 'mock-test' ? <div className="learning-row-actions">
                       <button aria-label="Edit content" onClick={() => editItem(item)} type="button"><FiEdit2 /></button>
                       <button aria-label="Archive content" className="danger" onClick={() => removeItem(item)} type="button"><FiTrash2 /></button>
-                    </div>
+                    </div> : null}
                   </article>
                 ))}
               </div>

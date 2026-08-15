@@ -48,6 +48,7 @@ const paymentIntentSchema = new mongoose.Schema(
     enrollment: { type: mongoose.Schema.Types.ObjectId, ref: 'Enrollment' },
     transaction: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
     razorpay: {
+      account: { type: String, enum: ['primary', 'standard-checkout'], default: 'primary' },
       orderId: { type: String, trim: true, sparse: true, unique: true, index: true },
       qrId: { type: String, trim: true, sparse: true, unique: true, index: true },
       paymentId: { type: String, trim: true, sparse: true, unique: true, index: true },

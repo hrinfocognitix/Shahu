@@ -13,7 +13,7 @@ const { hashPassword } = require('../helpers/bcrypt.helper');
 const { sendEmail } = require('./email.service');
 const { createReceiptPdf } = require('./receiptPdf.service');
 const { createPurchaseConfirmationEmail } = require('./purchaseEmail.service');
-const { createOrder, createSingleUseUpiQr, fetchQr, fetchQrPayments, closeQr, fetchPayment, fetchOrderPayments, verifyCheckoutSignature, verifyWebhookSignature } = require('./payment.service');
+const { createStandardCheckoutOrder, createSingleUseUpiQr, fetchQr, fetchQrPayments, closeQr, fetchPayment, fetchOrderPayments, fetchStandardCheckoutPayment, fetchStandardCheckoutOrderPayments, verifyCheckoutSignature, verifyStandardCheckoutSignature, verifyWebhookSignature } = require('./payment.service');
 const logger = require('../config/logger');
 const { ROLES } = require('../constants/roles');
 const env = require('../config/env');
@@ -239,7 +239,7 @@ async function expireRazorpayQrPayments() {
     const internalReference = createTransactionReference();
     let order;
   try {
-    order = await createOrder({
+    order = await createStandardCheckoutOrder({
       amount: amountMinor,
       currency: 'INR',
       receipt: internalReference.slice(0, 40),
@@ -259,9 +259,9 @@ async function expireRazorpayQrPayments() {
     const intent = await PaymentIntent.create({
       transactionReference: internalReference, internalReference, course: course._id, paymentAccount: account._id, email: buyer.email, buyer,
       provider: 'razorpay', paymentMode: 'merchant-gateway', merchantType: 'business', amount, amountMinor, upiId: 'razorpay-checkout@razorpay',
-      payeeName: 'Razorpay', transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING', razorpay: { orderId: order.id },
+      payeeName: 'Razorpay', transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING', razorpay: { account: 'standard-checkout', orderId: order.id },
     });
-    return { paymentId: String(intent._id), paymentToken: accessToken, keyId: env.razorpay.keyId, order_id: order.id, amount: order.amount, currency: order.currency, courseName: course.name, internalReference };
+    return { paymentId: String(intent._id), paymentToken: accessToken, keyId: env.razorpay.standardCheckoutKeyId, order_id: order.id, amount: order.amount, currency: order.currency, courseName: course.name, internalReference };
   }
 
 async function verifyRazorpayCheckoutPayment(paymentId, token, body) {
@@ -270,9 +270,13 @@ async function verifyRazorpayCheckoutPayment(paymentId, token, body) {
     const intent = await requirePaymentAccess(paymentId, token);
     if (intent.provider !== 'razorpay' || intent.razorpay?.orderId !== orderId) throw new AppError('Payment verification failed.', STATUS_CODES.BAD_REQUEST);
     if (intent.status === 'PAID' && intent.enrollment) return { status: 'PAID', paymentId: String(intent._id) };
-    if (intent.status !== 'PENDING' || !verifyCheckoutSignature({ orderId, paymentId: razorpayPaymentId, signature })) throw new AppError('Payment signature verification failed.', STATUS_CODES.BAD_REQUEST);
+    const isStandardCheckout = intent.razorpay?.account === 'standard-checkout';
+    const signatureIsValid = isStandardCheckout
+      ? verifyStandardCheckoutSignature({ orderId, paymentId: razorpayPaymentId, signature })
+      : verifyCheckoutSignature({ orderId, paymentId: razorpayPaymentId, signature });
+    if (intent.status !== 'PENDING' || !signatureIsValid) throw new AppError('Payment signature verification failed.', STATUS_CODES.BAD_REQUEST);
     let payment;
-    try { payment = await fetchPayment(razorpayPaymentId); } catch (_) { throw new AppError('Unable to verify the payment with Razorpay.', STATUS_CODES.SERVICE_UNAVAILABLE); }
+    try { payment = isStandardCheckout ? await fetchStandardCheckoutPayment(razorpayPaymentId) : await fetchPayment(razorpayPaymentId); } catch (_) { throw new AppError('Unable to verify the payment with Razorpay.', STATUS_CODES.SERVICE_UNAVAILABLE); }
     if (payment.order_id !== orderId || Number(payment.amount) !== Number(intent.amountMinor) || payment.currency !== 'INR' || payment.status !== 'captured') throw new AppError('Payment is not captured or does not match this order.', STATUS_CODES.BAD_REQUEST);
     intent.status = 'PAID'; intent.razorpay.paymentId = razorpayPaymentId; intent.razorpay.signature = signature; intent.razorpay.paidAt = new Date(); await intent.save();
     const approval = await approvePayment(intent._id, { role: 'system' }, 'razorpay-checkout', { expectedStatus: 'PAID', finalStatus: 'PAID', auditAction: 'razorpay_checkout_verified', reason: 'Verified Razorpay Standard Checkout signature and captured payment' });
@@ -286,11 +290,12 @@ async function reconcileRazorpayPayment(paymentId, token) {
   if (intent.razorpay?.expiresAt && intent.razorpay.expiresAt < new Date()) { intent.status = 'EXPIRED'; await intent.save(); return { paymentId: String(intent._id), status: 'EXPIRED' }; }
   // Standard Checkout orders are reconciled by their order ID, not QR APIs.
   if (intent.razorpay?.orderId) {
+    const isStandardCheckout = intent.razorpay?.account === 'standard-checkout';
     let payment;
     try {
-      if (intent.razorpay.paymentId) payment = await fetchPayment(intent.razorpay.paymentId);
+      if (intent.razorpay.paymentId) payment = isStandardCheckout ? await fetchStandardCheckoutPayment(intent.razorpay.paymentId) : await fetchPayment(intent.razorpay.paymentId);
       else {
-        const result = await fetchOrderPayments(intent.razorpay.orderId);
+        const result = isStandardCheckout ? await fetchStandardCheckoutOrderPayments(intent.razorpay.orderId) : await fetchOrderPayments(intent.razorpay.orderId);
         payment = (result?.items || []).find(item => item.order_id === intent.razorpay.orderId && Number(item.amount) === Number(intent.amountMinor) && item.currency === 'INR' && item.status === 'captured');
       }
     } catch (_) { return { paymentId: String(intent._id), status: 'PENDING' }; }
@@ -348,7 +353,9 @@ async function markRazorpayCheckoutFailed(paymentId, token, body) {
   // A client dismissal can race a completed payment. Confirm Razorpay has not captured it first.
   if (intent.razorpay?.orderId) {
     try {
-      const result = await fetchOrderPayments(intent.razorpay.orderId);
+      const result = intent.razorpay?.account === 'standard-checkout'
+        ? await fetchStandardCheckoutOrderPayments(intent.razorpay.orderId)
+        : await fetchOrderPayments(intent.razorpay.orderId);
       const captured = (result?.items || []).find(item => item.order_id === intent.razorpay.orderId && Number(item.amount) === Number(intent.amountMinor) && item.currency === 'INR' && item.status === 'captured');
       if (captured) {
         intent.status = 'PAID'; intent.razorpay.paymentId = captured.id; intent.razorpay.paidAt = new Date(); await intent.save();

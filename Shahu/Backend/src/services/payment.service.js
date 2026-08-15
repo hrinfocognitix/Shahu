@@ -11,10 +11,28 @@ function getRazorpayClient() {
   });
 }
 
+function getStandardCheckoutRazorpayClient() {
+  if (!env.razorpay.standardCheckoutKeyId || !env.razorpay.standardCheckoutKeySecret) {
+    return null;
+  }
+  return new Razorpay({
+    key_id: env.razorpay.standardCheckoutKeyId,
+    key_secret: env.razorpay.standardCheckoutKeySecret
+  });
+}
+
 async function createOrder({ amount, currency = 'INR', receipt }) {
   const client = getRazorpayClient();
   if (!client) {
     return { skipped: true, reason: 'Razorpay is not configured' };
+  }
+  return client.orders.create({ amount, currency, receipt });
+}
+
+async function createStandardCheckoutOrder({ amount, currency = 'INR', receipt }) {
+  const client = getStandardCheckoutRazorpayClient();
+  if (!client) {
+    return { skipped: true, reason: 'Razorpay Standard Checkout is not configured' };
   }
   return client.orders.create({ amount, currency, receipt });
 }
@@ -66,6 +84,13 @@ function verifyCheckoutSignature({ orderId, paymentId, signature }) {
   return expected.length === String(signature).length && require('crypto').timingSafeEqual(Buffer.from(expected), Buffer.from(String(signature)));
 }
 
+function verifyStandardCheckoutSignature({ orderId, paymentId, signature }) {
+  const keySecret = env.razorpay.standardCheckoutKeySecret;
+  if (!keySecret || !orderId || !paymentId || !signature) return false;
+  const expected = require('crypto').createHmac('sha256', keySecret).update(`${orderId}|${paymentId}`).digest('hex');
+  return expected.length === String(signature).length && require('crypto').timingSafeEqual(Buffer.from(expected), Buffer.from(String(signature)));
+}
+
 async function fetchPayment(paymentId) {
   return requireRazorpayClient().payments.fetch(paymentId);
 }
@@ -74,4 +99,16 @@ async function fetchOrderPayments(orderId) {
   return requireRazorpayClient().orders.fetchPayments(orderId);
 }
 
-module.exports = { createOrder, getRazorpayClient, createSingleUseUpiQr, fetchQr, fetchQrPayments, closeQr, verifyWebhookSignature, verifyCheckoutSignature, fetchPayment, fetchOrderPayments };
+async function fetchStandardCheckoutPayment(paymentId) {
+  const client = getStandardCheckoutRazorpayClient();
+  if (!client) throw new Error('Razorpay Standard Checkout is not configured');
+  return client.payments.fetch(paymentId);
+}
+
+async function fetchStandardCheckoutOrderPayments(orderId) {
+  const client = getStandardCheckoutRazorpayClient();
+  if (!client) throw new Error('Razorpay Standard Checkout is not configured');
+  return client.orders.fetchPayments(orderId);
+}
+
+module.exports = { createOrder, createStandardCheckoutOrder, getRazorpayClient, getStandardCheckoutRazorpayClient, createSingleUseUpiQr, fetchQr, fetchQrPayments, closeQr, verifyWebhookSignature, verifyCheckoutSignature, verifyStandardCheckoutSignature, fetchPayment, fetchOrderPayments, fetchStandardCheckoutPayment, fetchStandardCheckoutOrderPayments };

@@ -74,7 +74,11 @@ module.exports = {
   razorpay: {
     keyId: process.env.RAZORPAY_KEY_ID,
     keySecret: process.env.RAZORPAY_KEY_SECRET,
-    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET
+    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
+    // Standard Checkout can be settled to a different Razorpay merchant
+    // account without changing the existing QR-payment account.
+    standardCheckoutKeyId: process.env.RAZORPAY_STANDARD_CHECKOUT_KEY_ID,
+    standardCheckoutKeySecret: process.env.RAZORPAY_STANDARD_CHECKOUT_KEY_SECRET
   },
   twilio: {
     accountSid: process.env.TWILIO_ACCOUNT_SID,
