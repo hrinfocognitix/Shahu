@@ -7,7 +7,9 @@ const paymentIntentSchema = new mongoose.Schema(
     transactionReference: { type: String, required: true, unique: true, trim: true, index: true },
     internalReference: { type: String, required: true, unique: true, sparse: true, trim: true, index: true },
     course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true, index: true },
-    paymentAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademyRecord', required: true },
+    // Razorpay settles directly to the configured Razorpay merchant account.
+    // Legacy/manual UPI intents can still reference an academy payment account.
+    paymentAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademyRecord' },
     email: { type: String, required: true, lowercase: true, trim: true, index: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
     buyer: {

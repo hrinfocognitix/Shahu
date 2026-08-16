@@ -9,7 +9,7 @@ const actions = [
   ['Students', ROUTES.students, FiUsers, 'View student records and performance'],
   ['Teachers', ROUTES.teachers, FiUsers, 'Manage teacher records'],
   ['Courses', ROUTES.courses, FiBookOpen, 'Course and subject reporting'],
-  ['Payment Accounts', ROUTES.paymentAccounts, FiCreditCard, 'Collections and payment details'],
+  ['Transactions', ROUTES.coursePurchases, FiCreditCard, 'Razorpay collections and payment details'],
   ['Reports', ROUTES.reports, FiFileText, 'Purchase and academy reports'],
   ['Audit Logs', ROUTES.auditLogs, FiActivity, 'Every recorded admin action'],
   ['Deleted Items', ROUTES.deletedRecords, FiTrash2, 'Review and permanently delete records'],

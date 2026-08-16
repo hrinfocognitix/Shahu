@@ -8,7 +8,7 @@ import { useAuth } from '../../hooks/useAuth';
 
 const labels = {
   courses: 'Courses',
-  'payment-accounts': 'Payment Accounts',
+  'payment-accounts': 'Transactions',
   'course-purchases': 'Course Purchases',
   syllabus: 'Syllabus',
   notes: 'Notes',
@@ -49,7 +49,6 @@ const initialCourse = {
   discountValue: '',
   discountPercent: '',
   offerText: '',
-  primaryPaymentAccount: '',
   status: 'active',
   imageUrl: '',
   imageFile: null,
@@ -135,7 +134,6 @@ export function Management({ resource }) {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [courses, setCourses] = useState([]);
-  const [paymentAccounts, setPaymentAccounts] = useState([]);
   const [accountPayments, setAccountPayments] = useState([]);
   const [paymentFilters, setPaymentFilters] = useState({ account: '', status: '', from: '', to: '' });
   const [activeSubjects, setActiveSubjects] = useState([]);
@@ -182,17 +180,6 @@ export function Management({ resource }) {
   useEffect(() => {
     load();
   }, [resource]);
-  useEffect(() => {
-    if (isCourse)
-      apiClient
-        .get('/payment-accounts', { params: { limit: 100 } })
-        .then((response) =>
-          setPaymentAccounts(
-            (response.data.data || []).filter((item) => item.status !== 'inactive')
-          )
-        )
-        .catch(() => setPaymentAccounts([]));
-  }, [isCourse]);
   useEffect(() => {
     if (!isAccount) { setAccountPayments([]); return; }
     apiClient
@@ -557,7 +544,7 @@ export function Management({ resource }) {
               : 'Manage live records used by the website and student app.'}
           </p>
         </div>
-        {!isPurchases && resource !== 'students' && (
+        {!isPurchases && !isAccount && resource !== 'students' && (
           <button className="btn btn-primary" onClick={beginCreate}>
             <FiPlus /> Add {titleFor(resource).replace(/s$/, '')}
           </button>
@@ -581,13 +568,13 @@ export function Management({ resource }) {
           </div>
           <div className="card payment-account-payment-list">
             <h2>Payments received</h2>
-            <div className="payment-account-filters"><select value={paymentFilters.account} onChange={(event) => setPaymentFilters((current) => ({ ...current, account: event.target.value }))}><option value="">All payment accounts</option>{items.map((account) => <option key={account._id} value={account._id}>{account.title}</option>)}</select><select value={paymentFilters.status} onChange={(event) => setPaymentFilters((current) => ({ ...current, status: event.target.value }))}><option value="">All statuses</option>{[...new Set(accountPayments.map((payment) => payment.status).filter(Boolean))].sort().map((status) => <option key={status} value={status}>{status}</option>)}</select><label>From <input type="date" value={paymentFilters.from} onChange={(event) => setPaymentFilters((current) => ({ ...current, from: event.target.value }))} /></label><label>To <input type="date" value={paymentFilters.to} onChange={(event) => setPaymentFilters((current) => ({ ...current, to: event.target.value }))} /></label></div>
+            <div className="payment-account-filters"><select value={paymentFilters.status} onChange={(event) => setPaymentFilters((current) => ({ ...current, status: event.target.value }))}><option value="">All statuses</option>{[...new Set(accountPayments.map((payment) => payment.status).filter(Boolean))].sort().map((status) => <option key={status} value={status}>{status}</option>)}</select><label>From <input type="date" value={paymentFilters.from} onChange={(event) => setPaymentFilters((current) => ({ ...current, from: event.target.value }))} /></label><label>To <input type="date" value={paymentFilters.to} onChange={(event) => setPaymentFilters((current) => ({ ...current, to: event.target.value }))} /></label></div>
             {filteredAccountPayments.length > 200 ? <p className="payment-list-warning"><b>Large payment list:</b> {filteredAccountPayments.length} records are loaded. Use the account, status, or date filters to keep the page responsive and reduce browser memory use.</p> : null}
-            {filteredAccountPayments.length ? <div className="payment-account-table-wrap"><table><thead><tr><th>Date & time</th><th>Payment account</th><th>Student</th><th>Email</th><th>Mobile</th><th>Course</th><th>Validity</th><th>Gross amount</th><th>Support charge (2%)</th><th>Net amount</th><th>Status</th></tr></thead><tbody>{filteredAccountPayments.map((payment) => { const amount = Number(payment.amount || 0); const charge = ['VERIFIED', 'PAID'].includes(payment.status) ? amount * 0.02 : 0; return <tr key={payment._id}><td>{new Date(payment.verifiedAt || payment.submittedAt || payment.createdAt).toLocaleString('en-IN')}</td><td>{payment.paymentAccount?.title || 'Payment account'}</td><td>{payment.buyer?.name || '—'}</td><td>{payment.email || '—'}</td><td>{payment.buyer?.mobileNo || '—'}</td><td>{payment.course?.name || '—'}</td><td>{validityLabel(payment.enrollment)}</td><td>₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td>{charge ? `− ₹${charge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}</td><td>{charge ? `₹${(amount - charge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}</td><td><span className={`status-pill ${String(payment.status || '').toLowerCase()}`}>{payment.status || '—'}</span></td></tr>; })}</tbody></table></div> : <p className="muted">No payments match the selected filters.</p>}
+            {filteredAccountPayments.length ? <div className="payment-account-table-wrap"><table><thead><tr><th>Date & time</th><th>Gateway</th><th>Student</th><th>Email</th><th>Mobile</th><th>Course</th><th>Validity</th><th>Gross amount</th><th>Support charge (2%)</th><th>Net amount</th><th>Status</th></tr></thead><tbody>{filteredAccountPayments.map((payment) => { const amount = Number(payment.amount || 0); const charge = ['VERIFIED', 'PAID'].includes(payment.status) ? amount * 0.02 : 0; return <tr key={payment._id}><td>{new Date(payment.verifiedAt || payment.submittedAt || payment.createdAt).toLocaleString('en-IN')}</td><td>Razorpay</td><td>{payment.buyer?.name || '—'}</td><td>{payment.email || '—'}</td><td>{payment.buyer?.mobileNo || '—'}</td><td>{payment.course?.name || '—'}</td><td>{validityLabel(payment.enrollment)}</td><td>₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td>{charge ? `− ₹${charge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}</td><td>{charge ? `₹${(amount - charge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}</td><td><span className={`status-pill ${String(payment.status || '').toLowerCase()}`}>{payment.status || '—'}</span></td></tr>; })}</tbody></table></div> : <p className="muted">No payments match the selected filters.</p>}
           </div>
         </section>
       )}
-      <div className="card management-list">
+      {!isAccount && <div className="card management-list">
         {loading ? (
           <p className="muted">Loading records…</p>
         ) : !items.length ? (
@@ -708,7 +695,7 @@ export function Management({ resource }) {
             </article>
           ))
         )}
-      </div>
+      </div>}
       {open && (
         <div className="login-overlay" onMouseDown={() => setOpen(false)}>
           <form
@@ -727,7 +714,6 @@ export function Management({ resource }) {
                 form={form}
                 update={update}
                 editing={editing}
-                paymentAccounts={paymentAccounts}
                 activeSubjects={activeSubjects}
               />
             ) : isAccount ? (
@@ -745,7 +731,7 @@ export function Management({ resource }) {
   );
 }
 
-function CourseFields({ form, update, editing, paymentAccounts, activeSubjects }) {
+function CourseFields({ form, update, editing, activeSubjects }) {
   const original = Number(form.actualPrice || 0);
   const discount = form.hasDiscount ? Number(form.discountValue || 0) : 0;
   const payable = Math.max(0, Number((form.discountType === 'fixed' ? original - discount : original - (original * discount) / 100).toFixed(2)));
@@ -821,22 +807,8 @@ function CourseFields({ form, update, editing, paymentAccounts, activeSubjects }
           admission offer.
         </small>
       </div>
-      <h3 className="full-field course-form-heading">Payment and availability</h3>
-      <label>
-        <span>Primary payment account</span>
-        <select
-          value={form.primaryPaymentAccount || ''}
-          onChange={(event) => update('primaryPaymentAccount', event.target.value)}
-        >
-          <option value="">Use academy default account</option>
-          {paymentAccounts.map((account) => (
-            <option value={account._id} key={account._id}>
-              {account.title}
-            </option>
-          ))}
-        </select>
-        <small>This is the account shown to Android buyers for this course.</small>
-      </label>
+      <h3 className="full-field course-form-heading">Course availability</h3>
+      <small className="full-field">Payments are processed directly by Razorpay using the configured live Razorpay account. No course payment account is required.</small>
       <label>
         <span>Course status</span>
         <select value={form.status || 'active'} onChange={(event) => update('status', event.target.value)}>

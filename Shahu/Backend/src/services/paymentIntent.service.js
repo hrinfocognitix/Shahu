@@ -216,13 +216,11 @@ async function createRazorpayQrPayment(body, authenticatedStudent = null) {
     ? await getAuthenticatedBuyer(authenticatedStudent, body.courseId)
     : await loadVerifiedBuyer(body.courseId, body.email, body);
   if (authenticatedStudent && body.deviceUuid) buyer.deviceUuid = String(body.deviceUuid).trim();
-  const course = await Course.findOne({ _id: body.courseId, status: 'active', isDeleted: { $ne: true } }).select('name fees primaryPaymentAccount');
+  const course = await Course.findOne({ _id: body.courseId, status: 'active', isDeleted: { $ne: true } }).select('name fees');
   if (!course) throw new AppError('Course not found.', STATUS_CODES.NOT_FOUND);
   if (!authenticatedStudent) await assertBuyerCanPurchaseCourse(course._id, buyer);
   const amount = Number(course.fees || 0); const amountMinor = Math.round(amount * 100);
   if (amountMinor < 100) throw new AppError('Course price must be at least ₹1.00 for Razorpay.', STATUS_CODES.BAD_REQUEST);
-  const account = course.primaryPaymentAccount ? await AcademyRecord.findOne({ _id: course.primaryPaymentAccount, module: 'payment-account', status: 'active', isDeleted: { $ne: true } }) : null;
-  if (!account) throw new AppError('An active payment account is required for this course.', STATUS_CODES.CONFLICT);
   const internalReference = createTransactionReference();
   // Razorpay requires close_by to be at least 15 minutes. The academy's own
   // expiry is four minutes; the scheduled backend job closes the QR at that
@@ -235,7 +233,7 @@ async function createRazorpayQrPayment(body, authenticatedStudent = null) {
     } catch (_) { throw new AppError('Unable to create the Razorpay payment QR. Check Razorpay QR access and configuration.', STATUS_CODES.SERVICE_UNAVAILABLE); }
     const accessToken = crypto.randomBytes(32).toString('base64url');
     const intent = await PaymentIntent.create({
-      transactionReference: internalReference, internalReference, course: course._id, paymentAccount: account._id,
+      transactionReference: internalReference, internalReference, course: course._id,
       email: buyer.email, userId: authenticatedStudent?._id, buyer, provider: 'razorpay', paymentMode: 'merchant-gateway', merchantType: 'business', amount, amountMinor,
       upiId: 'razorpay-qr@razorpay', payeeName: 'Razorpay', transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING',
       razorpay: { qrId: qr.id, qrImageUrl: qr.image_url, qrContent: qr.image_content, expiresAt },
@@ -269,11 +267,9 @@ async function expireRazorpayQrPayments() {
       ? await getAuthenticatedBuyer(authenticatedStudent, body.courseId)
       : await loadVerifiedBuyer(body.courseId, body.email, body);
     if (authenticatedStudent && body.deviceUuid) buyer.deviceUuid = String(body.deviceUuid).trim();
-    const course = await Course.findOne({ _id: body.courseId, status: 'active', isDeleted: { $ne: true } }).select('name fees primaryPaymentAccount');
+    const course = await Course.findOne({ _id: body.courseId, status: 'active', isDeleted: { $ne: true } }).select('name fees');
     if (!course) throw new AppError('Course not found.', STATUS_CODES.NOT_FOUND);
     if (!authenticatedStudent) await assertBuyerCanPurchaseCourse(course._id, buyer);
-    const account = course.primaryPaymentAccount ? await AcademyRecord.findOne({ _id: course.primaryPaymentAccount, module: 'payment-account', status: 'active', isDeleted: { $ne: true } }) : null;
-    if (!account) throw new AppError('An active payment account is required for this course.', STATUS_CODES.CONFLICT);
     const amount = Number(course.fees || 0); const amountMinor = Math.round(amount * 100);
     if (amountMinor < 100) throw new AppError('Course price must be at least ₹1.00.', STATUS_CODES.BAD_REQUEST);
     const internalReference = createTransactionReference();
@@ -297,7 +293,7 @@ async function expireRazorpayQrPayments() {
     if (order?.skipped || !order?.id) throw new AppError('Razorpay is not configured.', STATUS_CODES.SERVICE_UNAVAILABLE);
     const accessToken = crypto.randomBytes(32).toString('base64url');
     const intent = await PaymentIntent.create({
-      transactionReference: internalReference, internalReference, course: course._id, paymentAccount: account._id, email: buyer.email, userId: authenticatedStudent?._id, buyer,
+      transactionReference: internalReference, internalReference, course: course._id, email: buyer.email, userId: authenticatedStudent?._id, buyer,
       provider: 'razorpay', paymentMode: 'merchant-gateway', merchantType: 'business', amount, amountMinor, upiId: 'razorpay-checkout@razorpay',
       payeeName: 'Razorpay', transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING', razorpay: { account: 'standard-checkout', orderId: order.id },
     });
