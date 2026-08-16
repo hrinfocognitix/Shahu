@@ -218,6 +218,11 @@ export function Management({ resource }) {
     () => verifiedAccountPayments.reduce((total, payment) => total + Number(payment.amount || 0), 0),
     [verifiedAccountPayments],
   );
+  const supportChargeTotal = useMemo(
+    () => verifiedAccountPayments.reduce((total, payment) => total + (Number(payment.amount || 0) * 0.02), 0),
+    [verifiedAccountPayments],
+  );
+  const netAccountCollection = totalAccountCollection - supportChargeTotal;
   useEffect(() => {
     if (isCourse)
       apiClient
@@ -457,6 +462,12 @@ export function Management({ resource }) {
       setOpen(false);
       load();
     } catch (error) {
+      if (isCourse) {
+        const status = error.statusCode ? ` (HTTP ${error.statusCode})` : '';
+        const detail = error.serverMessage || error.response?.data?.message || error.message;
+        toast.error(`Course could not be saved${status}: ${detail || 'No error details were returned by the server.'}`);
+        return;
+      }
       toast.error(
         error.response?.data?.message || error.message || 'Unable to upload and save achievement'
       );
@@ -563,11 +574,16 @@ export function Management({ resource }) {
       )}
       {isAccount && (
         <section className="payment-account-collection">
-          <div className="payment-account-total"><span>Paid collection</span><strong>₹{totalAccountCollection.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><small>{verifiedAccountPayments.length} paid / verified payment{verifiedAccountPayments.length === 1 ? '' : 's'} in the selected filter</small></div>
+          <div className="payment-account-totals">
+            <div className="payment-account-total"><span>Gross paid collection</span><strong>₹{totalAccountCollection.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><small>{verifiedAccountPayments.length} paid / verified payment{verifiedAccountPayments.length === 1 ? '' : 's'} in the selected filter</small></div>
+            <div className="payment-account-total payment-account-charge"><span>Support charges (2%)</span><strong>− ₹{supportChargeTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><small>Calculated only on paid / verified transactions.</small></div>
+            <div className="payment-account-total payment-account-net"><span>Net collection after support charges</span><strong>₹{netAccountCollection.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><small>Gross collection minus the 2% support charge.</small></div>
+          </div>
           <div className="card payment-account-payment-list">
             <h2>Payments received</h2>
             <div className="payment-account-filters"><select value={paymentFilters.account} onChange={(event) => setPaymentFilters((current) => ({ ...current, account: event.target.value }))}><option value="">All payment accounts</option>{items.map((account) => <option key={account._id} value={account._id}>{account.title}</option>)}</select><select value={paymentFilters.status} onChange={(event) => setPaymentFilters((current) => ({ ...current, status: event.target.value }))}><option value="">All statuses</option>{[...new Set(accountPayments.map((payment) => payment.status).filter(Boolean))].sort().map((status) => <option key={status} value={status}>{status}</option>)}</select><label>From <input type="date" value={paymentFilters.from} onChange={(event) => setPaymentFilters((current) => ({ ...current, from: event.target.value }))} /></label><label>To <input type="date" value={paymentFilters.to} onChange={(event) => setPaymentFilters((current) => ({ ...current, to: event.target.value }))} /></label></div>
-            {filteredAccountPayments.length ? <div className="payment-account-table-wrap"><table><thead><tr><th>Date</th><th>Payment account</th><th>Student</th><th>Email</th><th>Mobile</th><th>Course</th><th>Validity</th><th>Amount</th><th>Status</th></tr></thead><tbody>{filteredAccountPayments.map((payment) => <tr key={payment._id}><td>{new Date(payment.verifiedAt || payment.submittedAt || payment.createdAt).toLocaleDateString('en-IN')}</td><td>{payment.paymentAccount?.title || 'Payment account'}</td><td>{payment.buyer?.name || '—'}</td><td>{payment.email || '—'}</td><td>{payment.buyer?.mobileNo || '—'}</td><td>{payment.course?.name || '—'}</td><td>{validityLabel(payment.enrollment)}</td><td>₹{Number(payment.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td><span className={`status-pill ${String(payment.status || '').toLowerCase()}`}>{payment.status || '—'}</span></td></tr>)}</tbody></table></div> : <p className="muted">No payments match the selected filters.</p>}
+            {filteredAccountPayments.length > 200 ? <p className="payment-list-warning"><b>Large payment list:</b> {filteredAccountPayments.length} records are loaded. Use the account, status, or date filters to keep the page responsive and reduce browser memory use.</p> : null}
+            {filteredAccountPayments.length ? <div className="payment-account-table-wrap"><table><thead><tr><th>Date & time</th><th>Payment account</th><th>Student</th><th>Email</th><th>Mobile</th><th>Course</th><th>Validity</th><th>Gross amount</th><th>Support charge (2%)</th><th>Net amount</th><th>Status</th></tr></thead><tbody>{filteredAccountPayments.map((payment) => { const amount = Number(payment.amount || 0); const charge = ['VERIFIED', 'PAID'].includes(payment.status) ? amount * 0.02 : 0; return <tr key={payment._id}><td>{new Date(payment.verifiedAt || payment.submittedAt || payment.createdAt).toLocaleString('en-IN')}</td><td>{payment.paymentAccount?.title || 'Payment account'}</td><td>{payment.buyer?.name || '—'}</td><td>{payment.email || '—'}</td><td>{payment.buyer?.mobileNo || '—'}</td><td>{payment.course?.name || '—'}</td><td>{validityLabel(payment.enrollment)}</td><td>₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td>{charge ? `− ₹${charge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}</td><td>{charge ? `₹${(amount - charge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}</td><td><span className={`status-pill ${String(payment.status || '').toLowerCase()}`}>{payment.status || '—'}</span></td></tr>; })}</tbody></table></div> : <p className="muted">No payments match the selected filters.</p>}
           </div>
         </section>
       )}

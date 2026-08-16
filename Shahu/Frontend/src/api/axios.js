@@ -21,6 +21,11 @@ const friendlyFailure = (error) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Keep the server's original response for admin screens that need to
+    // identify a failed save. The friendly message remains the default for
+    // ordinary user-facing requests.
+    error.serverMessage = error.response?.data?.message;
+    error.statusCode = error.response?.status;
     const message = friendlyFailure(error);
     error.message = message;
     error.userMessage = message;

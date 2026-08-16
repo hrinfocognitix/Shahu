@@ -42,5 +42,7 @@ enrollmentSchema.pre('validate', function validateDates() {
     this.invalidate('validUntil', 'Valid-until date must be on or after valid-from date');
   }
 });
-enrollmentSchema.index({ student: 1, course: 1, status: 1 });
+// A student owns a course once. Validity changes are renewals of this same
+// enrollment, not a second purchase record.
+enrollmentSchema.index({ student: 1, course: 1 }, { unique: true });
 module.exports = mongoose.model('Enrollment', enrollmentSchema);

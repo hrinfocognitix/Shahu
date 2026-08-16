@@ -6,14 +6,26 @@ const create = asyncHandler(async (req, res) => {
   const data = await paymentIntentService.createUpiPaymentIntent(req.body || {});
   return apiResponse.success(res, { statusCode: 201, message: 'Payment intent created.', data });
 });
+const createAuthenticated = asyncHandler(async (req, res) => {
+  const data = await paymentIntentService.createUpiPaymentIntent(req.body || {}, req.user);
+  return apiResponse.success(res, { statusCode: 201, message: 'Payment intent created.', data });
+});
 
 const createRazorpayQr = asyncHandler(async (req, res) => {
   const data = await paymentIntentService.createRazorpayQrPayment(req.body || {});
   return apiResponse.success(res, { statusCode: 201, message: 'Razorpay payment QR created.', data });
 });
+const createAuthenticatedRazorpayQr = asyncHandler(async (req, res) => {
+  const data = await paymentIntentService.createRazorpayQrPayment(req.body || {}, req.user);
+  return apiResponse.success(res, { statusCode: 201, message: 'Razorpay payment QR created.', data });
+});
 
 const createRazorpayCheckoutOrder = asyncHandler(async (req, res) => {
   const data = await paymentIntentService.createRazorpayCheckoutOrder(req.body || {});
+  return apiResponse.success(res, { statusCode: 201, message: 'Razorpay order created.', data });
+});
+const createAuthenticatedRazorpayCheckoutOrder = asyncHandler(async (req, res) => {
+  const data = await paymentIntentService.createRazorpayCheckoutOrder(req.body || {}, req.user);
   return apiResponse.success(res, { statusCode: 201, message: 'Razorpay order created.', data });
 });
 
@@ -66,4 +78,4 @@ const reject = asyncHandler(async (req, res) => {
   return apiResponse.success(res, { message: 'Payment rejected.', data });
 });
 
-module.exports = { create, createRazorpayQr, createRazorpayCheckoutOrder, verifyRazorpayCheckoutPayment, markRazorpayCheckoutFailed, checkRazorpayPayment, razorpayWebhook, submit, status, listAdmin, approve, reject };
+module.exports = { create, createAuthenticated, createRazorpayQr, createAuthenticatedRazorpayQr, createRazorpayCheckoutOrder, createAuthenticatedRazorpayCheckoutOrder, verifyRazorpayCheckoutPayment, markRazorpayCheckoutFailed, checkRazorpayPayment, razorpayWebhook, submit, status, listAdmin, approve, reject };

@@ -68,6 +68,37 @@ async function assertBuyerCanPurchaseCourse(courseId, buyer) {
   return student;
 }
 
+async function getAuthenticatedBuyer(student, courseId) {
+  if (!student || student.role !== ROLES.STUDENT) {
+    throw new AppError('A signed-in student account is required.', STATUS_CODES.UNAUTHORIZED);
+  }
+  const email = String(student.email || '').trim().toLowerCase();
+  const mobileNo = String(student.profile?.mobile || student.profile?.phone || '').trim();
+  if (!email || !mobileNo) {
+    throw new AppError('Your account needs a registered email address and mobile number before purchasing.', STATUS_CODES.CONFLICT);
+  }
+  const mobile = normalizedMobile(mobileNo);
+  const duplicate = await User.findOne({
+    role: ROLES.STUDENT,
+    _id: { $ne: student._id },
+    $or: [{ email }, ...(mobile ? [{ 'profile.mobile': mobile }, { 'profile.phone': mobile }] : [])],
+  }).select('_id');
+  if (duplicate) {
+    throw new AppError('Your email address or mobile number is associated with another student account. Please contact the academy to correct the account mapping.', STATUS_CODES.CONFLICT);
+  }
+  const alreadyPurchased = await Enrollment.exists({ student: student._id, course: courseId });
+  if (alreadyPurchased) {
+    const course = await Course.findById(courseId).select('name');
+    throw new AppError(`You have already purchased "${course?.name || 'this course'}". Please open My Courses to access it.`, STATUS_CODES.CONFLICT);
+  }
+  return {
+    name: String(student.name || email).trim(), email, mobileNo,
+    age: Number(student.profile?.age) || undefined,
+    education: String(student.profile?.educationQualification || '').trim(),
+    address: String(student.profile?.address || '').trim(),
+  };
+}
+
 async function loadVerifiedBuyer(courseId, email, body) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!normalizedEmail) throw new AppError('Email is required.', STATUS_CODES.BAD_REQUEST);
@@ -126,14 +157,17 @@ function toPaymentResponse(intent, accountPayload = {}) {
   };
 }
 
-async function createUpiPaymentIntent(body) {
+async function createUpiPaymentIntent(body, authenticatedStudent = null) {
   const { courseId, paymentAccountId } = body;
   if (!courseId) throw new AppError('Course is required.', STATUS_CODES.BAD_REQUEST);
-  const buyer = await loadVerifiedBuyer(courseId, body.email, body);
+  const buyer = authenticatedStudent
+    ? await getAuthenticatedBuyer(authenticatedStudent, courseId)
+    : await loadVerifiedBuyer(courseId, body.email, body);
+  if (authenticatedStudent && body.deviceUuid) buyer.deviceUuid = String(body.deviceUuid).trim();
   const course = await Course.findOne({ _id: courseId, status: 'active', isDeleted: { $ne: true } })
     .select('name fees primaryPaymentAccount acceptedPaymentAccounts');
   if (!course) throw new AppError('Course not found.', STATUS_CODES.NOT_FOUND);
-  await assertBuyerCanPurchaseCourse(course._id, buyer);
+  if (!authenticatedStudent) await assertBuyerCanPurchaseCourse(course._id, buyer);
 
   const allowedAccountIds = [course.primaryPaymentAccount, ...(course.acceptedPaymentAccounts || [])]
     .filter(Boolean).map(String);
@@ -156,7 +190,7 @@ async function createUpiPaymentIntent(body) {
   const internalReference = createTransactionReference();
   const intent = await PaymentIntent.create({
     transactionReference: internalReference, internalReference, course: course._id, paymentAccount: account._id,
-    email: buyer.email, buyer, provider: 'upi', paymentMode: 'direct-upi',
+    email: buyer.email, userId: authenticatedStudent?._id, buyer, provider: 'upi', paymentMode: 'direct-upi',
     merchantType: accountPayload.merchantType || 'personal', amount, amountMinor: Math.round(amount * 100),
     upiId, payeeName: String(accountPayload.merchantDisplayName || accountPayload.accountName || account.title || 'Course Payment').trim(),
     transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING_PAYMENT',
@@ -176,12 +210,15 @@ async function requirePaymentAccess(paymentId, token) {
 }
 
 // Creates a Razorpay single-use, fixed-price UPI QR. The amount always comes from Course.fees.
-async function createRazorpayQrPayment(body) {
+async function createRazorpayQrPayment(body, authenticatedStudent = null) {
   if (!body.courseId) throw new AppError('Course is required.', STATUS_CODES.BAD_REQUEST);
-  const buyer = await loadVerifiedBuyer(body.courseId, body.email, body);
+  const buyer = authenticatedStudent
+    ? await getAuthenticatedBuyer(authenticatedStudent, body.courseId)
+    : await loadVerifiedBuyer(body.courseId, body.email, body);
+  if (authenticatedStudent && body.deviceUuid) buyer.deviceUuid = String(body.deviceUuid).trim();
   const course = await Course.findOne({ _id: body.courseId, status: 'active', isDeleted: { $ne: true } }).select('name fees primaryPaymentAccount');
   if (!course) throw new AppError('Course not found.', STATUS_CODES.NOT_FOUND);
-  await assertBuyerCanPurchaseCourse(course._id, buyer);
+  if (!authenticatedStudent) await assertBuyerCanPurchaseCourse(course._id, buyer);
   const amount = Number(course.fees || 0); const amountMinor = Math.round(amount * 100);
   if (amountMinor < 100) throw new AppError('Course price must be at least ₹1.00 for Razorpay.', STATUS_CODES.BAD_REQUEST);
   const account = course.primaryPaymentAccount ? await AcademyRecord.findOne({ _id: course.primaryPaymentAccount, module: 'payment-account', status: 'active', isDeleted: { $ne: true } }) : null;
@@ -199,7 +236,7 @@ async function createRazorpayQrPayment(body) {
     const accessToken = crypto.randomBytes(32).toString('base64url');
     const intent = await PaymentIntent.create({
       transactionReference: internalReference, internalReference, course: course._id, paymentAccount: account._id,
-      email: buyer.email, buyer, provider: 'razorpay', paymentMode: 'merchant-gateway', merchantType: 'business', amount, amountMinor,
+      email: buyer.email, userId: authenticatedStudent?._id, buyer, provider: 'razorpay', paymentMode: 'merchant-gateway', merchantType: 'business', amount, amountMinor,
       upiId: 'razorpay-qr@razorpay', payeeName: 'Razorpay', transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING',
       razorpay: { qrId: qr.id, qrImageUrl: qr.image_url, qrContent: qr.image_content, expiresAt },
     });
@@ -226,12 +263,15 @@ async function expireRazorpayQrPayments() {
   }
 }
 
-  async function createRazorpayCheckoutOrder(body) {
+  async function createRazorpayCheckoutOrder(body, authenticatedStudent = null) {
     if (!body.courseId) throw new AppError('Course is required.', STATUS_CODES.BAD_REQUEST);
-    const buyer = await loadVerifiedBuyer(body.courseId, body.email, body);
+    const buyer = authenticatedStudent
+      ? await getAuthenticatedBuyer(authenticatedStudent, body.courseId)
+      : await loadVerifiedBuyer(body.courseId, body.email, body);
+    if (authenticatedStudent && body.deviceUuid) buyer.deviceUuid = String(body.deviceUuid).trim();
     const course = await Course.findOne({ _id: body.courseId, status: 'active', isDeleted: { $ne: true } }).select('name fees primaryPaymentAccount');
     if (!course) throw new AppError('Course not found.', STATUS_CODES.NOT_FOUND);
-    await assertBuyerCanPurchaseCourse(course._id, buyer);
+    if (!authenticatedStudent) await assertBuyerCanPurchaseCourse(course._id, buyer);
     const account = course.primaryPaymentAccount ? await AcademyRecord.findOne({ _id: course.primaryPaymentAccount, module: 'payment-account', status: 'active', isDeleted: { $ne: true } }) : null;
     if (!account) throw new AppError('An active payment account is required for this course.', STATUS_CODES.CONFLICT);
     const amount = Number(course.fees || 0); const amountMinor = Math.round(amount * 100);
@@ -257,7 +297,7 @@ async function expireRazorpayQrPayments() {
     if (order?.skipped || !order?.id) throw new AppError('Razorpay is not configured.', STATUS_CODES.SERVICE_UNAVAILABLE);
     const accessToken = crypto.randomBytes(32).toString('base64url');
     const intent = await PaymentIntent.create({
-      transactionReference: internalReference, internalReference, course: course._id, paymentAccount: account._id, email: buyer.email, buyer,
+      transactionReference: internalReference, internalReference, course: course._id, paymentAccount: account._id, email: buyer.email, userId: authenticatedStudent?._id, buyer,
       provider: 'razorpay', paymentMode: 'merchant-gateway', merchantType: 'business', amount, amountMinor, upiId: 'razorpay-checkout@razorpay',
       payeeName: 'Razorpay', transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING', razorpay: { account: 'standard-checkout', orderId: order.id },
     });
@@ -421,7 +461,11 @@ async function approvePayment(paymentId, admin, ip, options = {}) {
         { returnDocument: 'after', session }
       );
       if (!locked) return;
-      student = await User.findOne({ email: locked.email }).session(session);
+      // Authenticated follow-up purchases are permanently bound to the signed-in
+      // student, rather than re-identifying a user by submitted form details.
+      student = locked.userId
+        ? await User.findById(locked.userId).session(session)
+        : await User.findOne({ email: locked.email }).session(session);
       if (!student) {
         temporaryPassword = crypto.randomBytes(9).toString('base64url');
         [student] = await User.create([{ name: locked.buyer?.name || locked.email, email: locked.email,
