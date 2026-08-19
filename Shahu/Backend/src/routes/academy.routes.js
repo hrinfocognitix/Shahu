@@ -573,7 +573,11 @@ module.exports = [
             ? { ...courseFilter, $or: [{ scheduledAt: null }, { scheduledAt: { $lte: new Date() } }] }
             : courseFilter;
         },
-        canRead: canReadStudentCourse,
+        canRead: async (req, video) => {
+          if (!(await canReadStudentCourse(req, video))) return false;
+          // A student must not fetch a future live link by guessing its ID.
+          return req.user.role !== ROLES.STUDENT || !video.scheduledAt || new Date(video.scheduledAt) <= new Date();
+        },
         beforeCreate: async (req) => {
           validateLiveLecture(req.body);
           return { ...(await teacherCanPublish(req)), type: 'video' };
@@ -820,6 +824,11 @@ module.exports = [
         '/students',
         authorize(ROLES.ADMIN, ROLES.SUPERADMIN),
         courseCommerceController.studentList
+      );
+      router.post(
+        '/students/manual-enroll',
+        authorize(ROLES.SUPERADMIN),
+        courseCommerceController.manuallyEnrollStudent
       );
       router.get(
         '/students/:id',

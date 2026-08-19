@@ -8,6 +8,37 @@ const Exam = require('../models/Exam');
 const AcademyRecord = require('../models/AcademyRecord');
 const { ROLES } = require('../constants/roles');
 
+const compareVersions = (left = '', right = '') => {
+  const leftParts = String(left).split('.').map(value => Number.parseInt(value, 10) || 0);
+  const rightParts = String(right).split('.').map(value => Number.parseInt(value, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    if ((leftParts[index] || 0) !== (rightParts[index] || 0)) {
+      return (leftParts[index] || 0) > (rightParts[index] || 0) ? 1 : -1;
+    }
+  }
+  return 0;
+};
+
+const androidUpdate = asyncHandler(async (req, res) => {
+  const installedVersion = String(req.query.version || '0').trim();
+  const latestVersion = env.mobileUpdate.androidLatestVersion;
+  const minimumVersion = env.mobileUpdate.androidMinimumVersion;
+  const updateAvailable = compareVersions(installedVersion, latestVersion) < 0;
+  const required = Boolean(minimumVersion) && compareVersions(installedVersion, minimumVersion) < 0;
+
+  return apiResponse.success(res, {
+    message: 'Android update status fetched',
+    data: {
+      updateAvailable,
+      required,
+      latestVersion,
+      releaseNotes: env.mobileUpdate.androidReleaseNotes,
+      updateUrl: env.mobileUpdate.androidUpdateUrl,
+    },
+  });
+});
+
 const dashboard = asyncHandler(async (req, res) => {
   const [
     downloads,
@@ -151,4 +182,4 @@ const catalog = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { dashboard, catalog };
+module.exports = { dashboard, catalog, androidUpdate };

@@ -584,6 +584,7 @@ a {
 .student-toolbar input, .student-toolbar select, .page-heading select, .student-summary-card { color: var(--text-primary); }
 .student-pagination { color: var(--text-primary); font-weight: 800; }
 .student-pagination button, .enrollment-card button, .purchase-actions button { min-width: 88px; border-color: var(--primary); color: #fff; background: var(--primary); font: inherit; font-weight: 800; transition: color .18s ease, background .18s ease, border-color .18s ease; }
+.mock-performance-table-wrap { overflow-x: auto; margin-top: .7rem; border: 1px solid var(--sand); border-radius: 12px; background: var(--warm-white); }.mock-performance-table { min-width: 760px; width: 100%; border-collapse: collapse; font-size: .82rem; }.mock-performance-table th, .mock-performance-table td { padding: .75rem .7rem; border-bottom: 1px solid var(--beige); text-align: left; white-space: nowrap; }.mock-performance-table th { color: var(--text-muted); background: var(--cream); font-size: .68rem; text-transform: uppercase; }.mock-performance-table tr:last-child td { border-bottom: 0; }
 .student-pagination button:hover:not(:disabled), .enrollment-card button:hover, .purchase-actions button:hover:not(:disabled) { border-color: #745f4d; color: #fff; background: #745f4d; }
 .student-pagination button:focus-visible, .enrollment-card button:focus-visible, .purchase-actions button:focus-visible, .btn:focus-visible { outline: 3px solid rgb(196 83 83 / 28%); outline-offset: 2px; }
 .student-pagination button:disabled, .purchase-actions button:disabled { border-color: #d0c8bf; color: #655f59; background: #e4ded7; opacity: 1; cursor: not-allowed; }
@@ -623,6 +624,15 @@ a {
 .credential-panel dd { margin: .35rem 0 0; color: var(--text-primary); overflow-wrap: anywhere; }
 .credential-panel .temporary-password { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.2rem; font-weight: 900; letter-spacing: .08em; }
 .student-heading-actions { display: flex; align-items: center; gap: .6rem; }
+.manual-enrollment-form { display: grid; gap: .9rem; width: min(720px, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow: auto; color: var(--text-primary); }
+.manual-enrollment-form h2, .manual-enrollment-form p { margin: 0; }
+.manual-enrollment-form > label, .manual-enrollment-fields label { display: grid; gap: .35rem; color: var(--text-secondary); font-size: .78rem; font-weight: 800; }
+.manual-enrollment-form input, .manual-enrollment-form select, .manual-enrollment-form textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: .7rem .75rem; border: 1px solid var(--sand); border-radius: 9px; color: var(--text-primary); background: var(--warm-white); font: inherit; }
+.manual-enrollment-form input[readonly] { color: var(--text-muted); background: var(--cream); cursor: not-allowed; }
+.manual-enrollment-form textarea { min-height: 72px; resize: vertical; }
+.manual-enrollment-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.manual-enrollment-note { padding: .75rem .85rem; border: 1px solid #e9c96b; border-radius: 10px; color: #70510d; background: #fff8de; font-size: .8rem; line-height: 1.45; }
+@media (max-width: 580px) { .student-heading-actions { align-items: stretch; flex-wrap: wrap; }.manual-enrollment-fields { grid-template-columns: 1fr; } }
 .student-management .page-heading h1 { color: #172554 !important; background-image: none !important; background-clip: initial; -webkit-background-clip: initial; -webkit-text-fill-color: #172554 !important; }
 .student-management .page-heading .eyebrow { color: #553b1e; }
 .student-management .page-heading p:not(.eyebrow) { color: #0f5132 !important; font-weight: 650; }
@@ -931,3 +941,8 @@ input::placeholder, textarea::placeholder { color: #4b5563; opacity: 1; }
 /* Course and Subject selector placeholders must match the dark form text. */
 .learning-selectors select, .learning-selectors select option { color: #2b261f !important; }
 .learning-selectors select:disabled { color: #4b5563 !important; }
+
+/* Shared Admin/Super Admin header: latest Android release configured for students. */
+.app-version-chip { display: inline-flex; align-items: center; gap: .35rem; padding: .42rem .6rem; border: 1px solid var(--sand); border-radius: 10px; color: var(--text-secondary); background: var(--cream); font-size: .68rem; white-space: nowrap; }
+.app-version-chip strong { color: var(--primary-variant); font-size: .72rem; }
+@media (max-width: 760px) { .app-version-chip { display: none; } }

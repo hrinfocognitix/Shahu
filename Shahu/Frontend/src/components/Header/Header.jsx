@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { FiBell, FiChevronDown, FiLogOut, FiMenu, FiMoon, FiSun } from 'react-icons/fi';
@@ -6,6 +6,7 @@ import { toggleSidebar } from '../../redux/slices/uiSlice';
 import { logout } from '../../redux/slices/authSlice';
 import { useTheme } from '../../hooks/useTheme';
 import { authService } from '../../services/auth.service';
+import { dashboardService } from '../../services/dashboard.service';
 import { STORAGE_KEYS } from '../../constants';
 import { useTranslation } from 'react-i18next';
 
@@ -22,6 +23,7 @@ export function Header() {
   const { mode, toggleTheme } = useTheme();
   const { i18n, t } = useTranslation();
   const navigate = useNavigate();
+  const [androidUpdate, setAndroidUpdate] = useState(null);
   const endSession = () => { localStorage.removeItem(STORAGE_KEYS.auth); dispatch(logout()); navigate('/', { replace: true }); };
   const handleLogout = async () => { try { await authService.logout(refreshToken); } catch {} finally { endSession(); } };
 
@@ -34,12 +36,23 @@ export function Header() {
     return () => window.clearTimeout(timeout);
   }, [accessToken]);
 
+  useEffect(() => {
+    let active = true;
+    dashboardService.androidUpdate()
+      .then((update) => { if (active) setAndroidUpdate(update); })
+      .catch(() => { if (active) setAndroidUpdate(null); });
+    return () => { active = false; };
+  }, []);
+
   return (
     <header className="header">
       <button type="button" className="icon-button" onClick={() => dispatch(toggleSidebar())}>
         <FiMenu />
       </button>
       <div className="header-actions">
+        {androidUpdate?.latestVersion ? <div className="app-version-chip" title={androidUpdate.releaseNotes || `Latest Android app version ${androidUpdate.latestVersion}`}>
+          <span>Android app</span><strong>v{androidUpdate.latestVersion}</strong>
+        </div> : null}
         <div className="portal-language" aria-label="Language">
           <button className={i18n.language === 'en' ? 'active' : ''} onClick={() => { i18n.changeLanguage('en'); localStorage.setItem('locale', 'en'); }}>EN</button>
           <button className={i18n.language === 'mr' ? 'active' : ''} onClick={() => { i18n.changeLanguage('mr'); localStorage.setItem('locale', 'mr'); }}>मराठी</button>

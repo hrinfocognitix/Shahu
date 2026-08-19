@@ -36,6 +36,8 @@ export function Students() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [validity, setValidity] = useState(null);
   const [credentials, setCredentials] = useState(null);
+  const [manualEnrollment, setManualEnrollment] = useState(null);
+  const [manualEnrollmentSaving, setManualEnrollmentSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -100,6 +102,25 @@ export function Students() {
       toast.error(error.response?.data?.message || 'Unable to issue temporary password');
     }
   };
+  const submitManualEnrollment = async (event) => {
+    event.preventDefault();
+    setManualEnrollmentSaving(true);
+    try {
+      const response = await apiClient.post('/course-purchases/students/manual-enroll', manualEnrollment);
+      const data = response.data.data || {};
+      toast.success(response.data.message || 'Student enrolled successfully');
+      setManualEnrollment(null);
+      if (data.temporaryPassword) {
+        setCredentials({ email: data.student?.email, temporaryPassword: data.temporaryPassword });
+      }
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to add and enroll the student');
+    } finally {
+      setManualEnrollmentSaving(false);
+    }
+  };
+  const selectedManualCourse = courses.find((item) => item._id === manualEnrollment?.courseId);
   const permanentlyDeleteStudent = async () => {
     if (!details?.student?._id) return;
     const confirmation = window.prompt(`This permanently deletes ${details.student.name}, their enrollments, payments, attempts, notifications, and devices. Type DELETE STUDENT to continue.`);
@@ -171,13 +192,11 @@ export function Students() {
         <div>
           <p className="eyebrow">STUDENT MANAGEMENT</p>
           <h1>Purchased-course students</h1>
-          <p>
-            Students are created only after an Android payment is verified. Mobile, email and device
-            UUID remain read-only.
-          </p>
+          <p>Android payments add students automatically. Superadmin can also record an offline/manual admission with a required reason. Email and mobile always identify one student account.</p>
         </div>
         <div className="student-heading-actions">
           <span className="student-total">{meta.total || 0} students</span>
+          {user?.role === 'superadmin' ? <button className="btn btn-primary" onClick={() => setManualEnrollment({ name: '', email: '', mobileNo: '', courseId: '', age: '', education: '', address: '', reason: '' })}>Add student &amp; enroll</button> : null}
           <button className="btn btn-primary" onClick={exportStudents}>
             <FiDownload /> Export
           </button>
@@ -419,23 +438,37 @@ export function Students() {
               <section>
                 <h3>Mock-test performance</h3>
                 {details.attempts?.length ? (
-                  details.attempts.map((attempt) => {
-                    const percent = attempt.maximumScore
-                      ? Math.round((Number(attempt.score || 0) / Number(attempt.maximumScore)) * 100)
-                      : 0;
-                    return (
-                      <div className="enrollment-card" key={attempt._id}>
-                        <div>
-                          <b>{attempt.mockTest?.originalFilename || 'Question practice'}</b>
-                          <span className={`status-pill ${percent >= 40 ? 'active' : 'expired'}`}>
-                            {percent}%
-                          </span>
-                        </div>
-                        <p>{attempt.course?.name || 'Course'} · {attempt.subject?.name || 'Subject'}</p>
-                        <p>Marks: <b>{attempt.score || 0} / {attempt.maximumScore || 0}</b> · Submitted {date(attempt.submittedAt)}</p>
-                      </div>
-                    );
-                  })
+                  <div className="mock-performance-table-wrap">
+                    <table className="mock-performance-table">
+                      <thead>
+                        <tr>
+                          <th>Mock test</th>
+                          <th>Course</th>
+                          <th>Subject</th>
+                          <th>Marks scored</th>
+                          <th>Out of</th>
+                          <th>Percentage</th>
+                          <th>Submitted on</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {details.attempts.map((attempt) => {
+                          const score = Number(attempt.score || 0);
+                          const maximumScore = Number(attempt.maximumScore || 0);
+                          const percent = maximumScore ? Math.round((score / maximumScore) * 100) : 0;
+                          return <tr key={attempt._id}>
+                            <td><b>{attempt.mockTest?.originalFilename || 'Question practice'}</b></td>
+                            <td>{attempt.course?.name || 'Course'}</td>
+                            <td>{attempt.subject?.name || 'Subject'}</td>
+                            <td>{score}</td>
+                            <td>{maximumScore}</td>
+                            <td><span className={`status-pill ${percent >= 40 ? 'active' : 'expired'}`}>{percent}%</span></td>
+                            <td>{date(attempt.submittedAt)}</td>
+                          </tr>;
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 ) : (
                   <p className="muted">No mock-test attempts yet.</p>
                 )}
@@ -553,6 +586,29 @@ export function Students() {
               I have saved it securely
             </button>
           </article>
+        </div>
+      )}
+      {manualEnrollment && (
+        <div className="login-overlay" onMouseDown={() => !manualEnrollmentSaving && setManualEnrollment(null)}>
+          <form className="student-form manual-enrollment-form" onSubmit={submitManualEnrollment} onMouseDown={(event) => event.stopPropagation()}>
+            <button type="button" className="modal-close" disabled={manualEnrollmentSaving} onClick={() => setManualEnrollment(null)}><FiX /></button>
+            <p className="eyebrow">SUPERADMIN MANUAL ADMISSION</p>
+            <h2>Add student and enroll a course</h2>
+            <p className="manual-enrollment-note">Use this only for offline/manual admissions. The selected course fee is taken from the course record; no separate payment account is needed.</p>
+            <div className="manual-enrollment-fields">
+              <label><span>Student name</span><input required value={manualEnrollment.name} onChange={(event) => setManualEnrollment((value) => ({ ...value, name: event.target.value }))} /></label>
+              <label><span>Email address</span><input required type="email" value={manualEnrollment.email} onChange={(event) => setManualEnrollment((value) => ({ ...value, email: event.target.value }))} /></label>
+              <label><span>Mobile number</span><input required inputMode="numeric" pattern="[0-9]{10}" maxLength="10" value={manualEnrollment.mobileNo} onChange={(event) => setManualEnrollment((value) => ({ ...value, mobileNo: event.target.value.replace(/\D/g, '') }))} /></label>
+              <label><span>Course</span><select required value={manualEnrollment.courseId} onChange={(event) => setManualEnrollment((value) => ({ ...value, courseId: event.target.value }))}><option value="">Select course</option>{courses.map((item) => <option key={item._id} value={item._id}>{item.name} - {money(item.fees)}</option>)}</select></label>
+              <label><span>Course fee</span><input readOnly value={selectedManualCourse ? money(selectedManualCourse.fees) : 'Select a course'} /></label>
+              <label><span>Age (optional)</span><input type="number" min="1" value={manualEnrollment.age} onChange={(event) => setManualEnrollment((value) => ({ ...value, age: event.target.value }))} /></label>
+              <label><span>Education (optional)</span><input value={manualEnrollment.education} onChange={(event) => setManualEnrollment((value) => ({ ...value, education: event.target.value }))} /></label>
+              <label><span>Address (optional)</span><input value={manualEnrollment.address} onChange={(event) => setManualEnrollment((value) => ({ ...value, address: event.target.value }))} /></label>
+            </div>
+            <label><span>Why is Superadmin adding this student?</span><textarea required placeholder="Example: Offline cash admission at the academy" value={manualEnrollment.reason} onChange={(event) => setManualEnrollment((value) => ({ ...value, reason: event.target.value }))} /></label>
+            <p className="manual-enrollment-note">If the email/mobile belongs to an existing student, the new course is added to that same account. The same course cannot be enrolled twice.</p>
+            <button className="btn btn-primary" disabled={manualEnrollmentSaving}>{manualEnrollmentSaving ? 'Enrolling…' : 'Add student & enroll course'}</button>
+          </form>
         </div>
       )}
     </section>

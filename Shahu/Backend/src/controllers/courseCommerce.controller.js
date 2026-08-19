@@ -30,6 +30,13 @@ const createPurchaseId = () => {
   return `PUR-${day}-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
 };
 
+const normalizeMobile = (value) => String(value || '').replace(/\D/g, '').slice(-10);
+
+const duplicateAccountError = () => new AppError(
+  'This email or mobile number is mapped to another student account. Correct the account mapping before enrolling a course.',
+  STATUS_CODES.CONFLICT
+);
+
 const hashCourseOtp = (courseId, code) => crypto.createHash('sha256').update(`course-purchase:${courseId}:${code}`).digest('hex');
 
 const requestCourseOtp = asyncHandler(async (req, res) => {
@@ -268,6 +275,156 @@ const createPurchase = asyncHandler(async (req, res) => {
     ...(created ? { statusCode: 201 } : {}),
     message: created ? 'Course purchase submitted' : 'Purchase submission already received',
     data: transaction,
+  });
+});
+
+// This is deliberately separate from a laptop payment submission.  A superadmin
+// can use it for an offline/manual admission, but the course fee is always read
+// from the selected course and a student can only own a course once.
+const manuallyEnrollStudent = asyncHandler(async (req, res) => {
+  const { courseId, name, email, mobileNo, age, education, address, reason } = req.body || {};
+  if (![courseId, name, email, mobileNo, reason].every((value) => String(value || '').trim())) {
+    throw new AppError('Course, student name, email, mobile number, and admission reason are required', STATUS_CODES.BAD_REQUEST);
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const normalizedMobile = normalizeMobile(mobileNo);
+  if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+    throw new AppError('Enter a valid email address', STATUS_CODES.BAD_REQUEST);
+  }
+  if (!/^\d{10}$/.test(normalizedMobile)) {
+    throw new AppError('Enter a valid 10-digit mobile number', STATUS_CODES.BAD_REQUEST);
+  }
+
+  const course = await Course.findOne({
+    _id: courseId,
+    status: 'active',
+    isDeleted: { $ne: true },
+    $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
+  }).select('_id name fees price actualPrice discountType discountValue discountPercent durationDays');
+  if (!course) throw new AppError('Course not found or unavailable', STATUS_CODES.NOT_FOUND);
+
+  // Query both identity fields.  A partial match is not safe to "merge" here:
+  // it must be fixed by an administrator so one person keeps one account.
+  const mobileVariants = [normalizedMobile, `+91${normalizedMobile}`, `91${normalizedMobile}`];
+  const candidates = await User.find({
+    $or: [
+      { email: normalizedEmail },
+      { 'profile.mobile': { $in: mobileVariants } },
+      { 'profile.phone': { $in: mobileVariants } },
+    ],
+  }).select('+password');
+  const matchingStudent = candidates.length === 1 ? candidates[0] : null;
+  const matchingMobile = matchingStudent && [matchingStudent.profile?.mobile, matchingStudent.profile?.phone]
+    .some((value) => normalizeMobile(value) === normalizedMobile);
+  if (candidates.length > 1 || (matchingStudent && (matchingStudent.role !== ROLES.STUDENT || matchingStudent.email !== normalizedEmail || !matchingMobile))) {
+    throw duplicateAccountError();
+  }
+
+  if (matchingStudent && !matchingStudent.isActive) {
+    throw new AppError('This student account is inactive. Reactivate the account before enrolling a course.', STATUS_CODES.CONFLICT);
+  }
+  const studentId = matchingStudent?._id;
+  if (studentId && await Enrollment.exists({ student: studentId, course: course._id })) {
+    throw new AppError(`You have already purchased "${course.name}". Please open My Courses to access it.`, STATUS_CODES.CONFLICT);
+  }
+
+  const purchaseDate = new Date();
+  const validityDays = Math.max(1, Number(course.durationDays || 1));
+  const validUntil = new Date(purchaseDate);
+  validUntil.setUTCDate(validUntil.getUTCDate() + validityDays);
+  const purchaseId = createPurchaseId();
+  const reference = `ADMIN-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
+  const pricing = buildPricingSnapshot(course);
+  let student = matchingStudent;
+  let enrollment;
+  let transaction;
+  let temporaryPassword;
+  let createdStudent = false;
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      if (!student) {
+        temporaryPassword = crypto.randomBytes(9).toString('base64url');
+        [student] = await User.create([{
+          name: String(name).trim(), email: normalizedEmail,
+          password: await hashPassword(temporaryPassword), role: ROLES.STUDENT,
+          mustChangePassword: true, createdBy: req.user._id, updatedBy: req.user._id,
+          profile: {
+            mobile: normalizedMobile, phone: normalizedMobile, address: String(address || '').trim(),
+            age: age === '' || age == null ? undefined : Number(age),
+            educationQualification: String(education || '').trim(), admissionDate: purchaseDate,
+            paymentStatus: 'successful', studentStatus: 'active',
+          },
+        }], { session });
+        createdStudent = true;
+      }
+
+      // Recheck inside the transaction to protect simultaneous superadmin requests.
+      if (await Enrollment.exists({ student: student._id, course: course._id }).session(session)) {
+        throw new AppError(`You have already purchased "${course.name}". Please open My Courses to access it.`, STATUS_CODES.CONFLICT);
+      }
+      [transaction] = await Transaction.create([{
+        purchaseId, transactionReference: reference, idempotencyKey: reference,
+        student: student._id, course: course._id,
+        buyer: {
+          name: student.name, email: student.email, mobileNo: normalizedMobile,
+          age: student.profile?.age, education: student.profile?.educationQualification,
+          address: student.profile?.address,
+        },
+        pricing, paymentMethod: 'Superadmin manual enrollment', submittedFrom: 'laptop',
+        status: 'successful', paymentDate: purchaseDate, verifiedAt: purchaseDate,
+        verifiedBy: req.user._id, gatewayReference: reference, receiptNumber: `RCP-${purchaseId}`,
+        note: `Superadmin admission: ${String(reason).trim()}`,
+      }], { session });
+      [enrollment] = await Enrollment.create([{
+        student: student._id, course: course._id, transaction: transaction._id,
+        purchaseDate, validFrom: purchaseDate, validUntil, validityDays, status: 'active',
+        validityMode: 'manual', createdBy: req.user._id, updatedBy: req.user._id,
+      }], { session });
+      await User.findByIdAndUpdate(student._id, {
+        $addToSet: { 'profile.purchasedCourses': course._id },
+        $set: { 'profile.paymentStatus': 'successful', 'profile.studentStatus': 'active', updatedBy: req.user._id },
+      }, { session });
+      await AuditLog.create([{
+        user: req.user._id, role: req.user.role, action: 'superadmin_student_enrolled',
+        module: 'students', recordId: student._id,
+        newValue: { course: course._id, enrollment: enrollment._id, transaction: transaction._id, fee: pricing.paidAmount },
+        reason: String(reason).trim(), ipAddress: req.ip,
+      }], { session });
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      const account = await User.findOne({ email: normalizedEmail }).select('_id');
+      if (account && await Enrollment.exists({ student: account._id, course: course._id })) {
+        throw new AppError(`You have already purchased "${course.name}". Please open My Courses to access it.`, STATUS_CODES.CONFLICT);
+      }
+      throw duplicateAccountError();
+    }
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+
+  try {
+    const receiptPdf = createReceiptPdf({ receiptNumber: transaction.receiptNumber, purchaseId, student, course, transaction, enrollment });
+    const purchaseEmail = createPurchaseConfirmationEmail({ student, course, transaction, enrollment, temporaryPassword });
+    const delivery = await sendEmail({
+      to: student.email, ...purchaseEmail,
+      attachments: [{ filename: `${transaction.receiptNumber}.pdf`, content: receiptPdf, contentType: 'application/pdf' }],
+    });
+    if (!delivery?.skipped) transaction.receiptEmailedAt = new Date();
+    else transaction.receiptEmailError = delivery.reason;
+    await transaction.save();
+  } catch (error) {
+    logger.error(`Manual enrollment email failed for ${purchaseId}`, error);
+    await Transaction.updateOne({ _id: transaction._id }, { $set: { receiptEmailError: String(error.message || 'Receipt email failed') } });
+  }
+
+  return apiResponse.success(res, {
+    statusCode: STATUS_CODES.CREATED,
+    message: createdStudent ? 'Student added and course enrolled. The temporary password and receipt were emailed.' : 'Course enrolled for the existing student. The receipt was emailed.',
+    data: { student: { _id: student._id, name: student.name, email: student.email }, enrollment, transaction, courseFee: pricing.paidAmount, ...(temporaryPassword ? { temporaryPassword } : {}) },
   });
 });
 
@@ -947,6 +1104,7 @@ module.exports = {
   requestCourseOtp,
   verifyCourseOtp,
   createPurchase,
+  manuallyEnrollStudent,
   listPurchases,
   coursePaymentOptions,
   verifyPurchase,

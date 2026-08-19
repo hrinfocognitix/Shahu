@@ -84,5 +84,11 @@ module.exports = {
     accountSid: process.env.TWILIO_ACCOUNT_SID,
     authToken: process.env.TWILIO_AUTH_TOKEN,
     from: process.env.TWILIO_FROM
+  },
+  mobileUpdate: {
+    androidLatestVersion: process.env.ANDROID_LATEST_VERSION || '1.0',
+    androidMinimumVersion: process.env.ANDROID_MINIMUM_VERSION || '',
+    androidUpdateUrl: process.env.ANDROID_UPDATE_URL || 'https://play.google.com/store/apps/details?id=com.cognitix.shahuapp',
+    androidReleaseNotes: process.env.ANDROID_RELEASE_NOTES || '',
   }
 };

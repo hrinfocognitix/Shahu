@@ -18,6 +18,7 @@ function createReceiptPdf({ receiptNumber, purchaseId, student, course, transact
   const paid = paidMinor != null ? Number(paidMinor) / 100 : Number(transaction.pricing?.paidAmount || 0);
   const paymentReference = transaction.gatewayReference || transaction.transactionReference || purchaseId;
   const mobile = student.profile?.mobile || student.profile?.phone || transaction.buyer?.mobileNo;
+  const courseName = course?.name || transaction.course?.name || 'Course';
   const rows = [
     ['Receipt number', receiptNumber],
     ['Purchase tracking ID', purchaseId],
@@ -29,9 +30,9 @@ function createReceiptPdf({ receiptNumber, purchaseId, student, course, transact
     ['Amount paid', `INR ${paid.toFixed(2)}`],
   ];
   const courseRows = [
-    ['Course name', course.name],
-    ['Course code', course.courseCode || course.courseId || '-'],
-    ['Course duration', `${enrollment.validityDays || course.durationDays || '-'} days`],
+    ['Course name', courseName],
+    ['Course code', course?.courseCode || course?.courseId || '-'],
+    ['Course duration', `${enrollment.validityDays || course?.durationDays || '-'} days`],
     ['Validity start date', formatDate(enrollment.validFrom)],
     ['Validity end date', formatDate(enrollment.validUntil)],
     ['Enrollment status', enrollment.status || 'active'],
@@ -47,6 +48,7 @@ function createReceiptPdf({ receiptNumber, purchaseId, student, course, transact
     pdfText(`Student: ${student.name || '-'}`, 50, 696),
     pdfText(`Email: ${student.email || transaction.buyer?.email || '-'}`, 50, 680),
     pdfText(`Mobile: ${mobile || '-'}`, 50, 664),
+    pdfText(`Course enrolled: ${courseName}`, 50, 646, 11, 'F2', '0.09 0.25 0.23'),
     'q 0.95 0.93 0.89 rg 40 438 515 202 re f Q',
     pdfText('PAYMENT TRANSACTION DETAILS', 52, 620, 11, 'F2', '0.09 0.25 0.23'),
     ...rows.flatMap(([label, value], index) => [
