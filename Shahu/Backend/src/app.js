@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const swaggerUi = require('swagger-ui-express');
 const env = require('./config/env');
 const swaggerSpec = require('./config/swagger');
+const logger = require('./config/logger');
 const requestLogger = require('./middleware/logger.middleware');
 const { apiLimiter } = require('./middleware/rateLimit.middleware');
 const routes = require('./routes');
@@ -17,14 +18,35 @@ const app = express();
 
 app.set('trust proxy', 1);
 app.use(helmet());
+// CORS runs before the request logger because browsers send OPTIONS preflights
+// before the multipart upload itself. Log the decision here so Render shows
+// why an Excel upload did or did not reach the learning controller.
+const corsOptions = {
+  origin(origin, callback) {
+    const allowed = env.isAllowedClientOrigin(origin);
+    const meta = { origin: origin || '(no Origin header)', allowed };
+    if (allowed) logger.info('CORS origin accepted', meta);
+    else logger.warn('CORS origin rejected', { ...meta, configuredOrigins: env.clientOrigins });
+    return callback(null, allowed);
+  },
+  credentials: true,
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  optionsSuccessStatus: 204,
+  maxAge: 86400,
+};
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    logger.info('CORS preflight received', {
+      path: req.originalUrl,
+      origin: req.get('origin') || '(no Origin header)',
+      requestedMethod: req.get('access-control-request-method'),
+      requestedHeaders: req.get('access-control-request-headers'),
+    });
+  }
+  next();
+});
 app.use(
-  cors({
-    origin(origin, callback) {
-      if (env.isAllowedClientOrigin(origin)) return callback(null, true);
-      return callback(new Error('Origin is not allowed by CORS'));
-    },
-    credentials: true
-  })
+  cors(corsOptions)
 );
 app.use(compression());
 // Render and other hosting providers probe the service root during deployment.

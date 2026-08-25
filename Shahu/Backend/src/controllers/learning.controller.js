@@ -19,6 +19,7 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs/promises');
 const os = require('os');
+const { Readable } = require('stream');
 const { execFile: executeFile } = require('child_process');
 const { promisify } = require('util');
 const env = require('../config/env');
@@ -35,6 +36,9 @@ const MAX_QUESTION_IMPORT_ROWS = Math.max(
   Number.parseInt(process.env.MAX_QUESTION_IMPORT_ROWS || '100000', 10) || 100000,
 );
 const IMPORT_ROW_BATCH_SIZE = 1000;
+// Preview rows are independent records. A small amount of parallelism keeps
+// large, valid imports responsive without overwhelming the database.
+const IMPORT_ROW_WRITE_CONCURRENCY = 3;
 const PREVIEW_ROW_SAMPLE_SIZE = 100;
 
 function signDownload(fileId, userId, role, now = Date.now()) {
@@ -83,7 +87,7 @@ const resolveCorrectOption = (answer, options) => {
   const raw = String(answer || '').trim();
   const compact = raw
     .toLowerCase()
-    .replace(/[().,:\-]/g, '')
+    .replace(/[().,:-]/g, '')
     .replace(/\s+/g, '');
   const answerKeys = {
     a: 'A', b: 'B', c: 'C', d: 'D',
@@ -803,13 +807,27 @@ const previewQuestions = asyncHandler(async (req, res) => {
         for (let number = 2; number <= sheet.rowCount; number += 1) { sourceRows += 1; if (sourceRows > MAX_QUESTION_IMPORT_ROWS) break; consumeRow(sheet.getRow(number), number); }
       }
     } else {
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(req.file.buffer);
-      const sheet = workbook.worksheets[0];
-      worksheetName = sheet?.name;
-      if (sheet) {
-        sheet.getRow(1).eachCell((cell, col) => { headers[String(cell.text).trim().toLowerCase()] = col; });
-        for (let number = 2; number <= sheet.rowCount; number += 1) { sourceRows += 1; if (sourceRows > MAX_QUESTION_IMPORT_ROWS) break; consumeRow(sheet.getRow(number), number); }
+      // Loading a large workbook with ExcelJS.Workbook creates every cell in
+      // memory and can make a small Render instance exit before it responds.
+      // The streaming reader releases each row after it has been normalized.
+      const reader = new ExcelJS.stream.xlsx.WorkbookReader(
+        Readable.from([req.file.buffer]),
+        { worksheets: 'emit', sharedStrings: 'cache', styles: 'ignore', hyperlinks: 'ignore' },
+      );
+      for await (const sheet of reader) {
+        worksheetName = sheet.name;
+        for await (const row of sheet) {
+          if (row.number === 1) {
+            row.eachCell((cell, col) => { headers[String(cell.text).trim().toLowerCase()] = col; });
+            continue;
+          }
+          sourceRows += 1;
+          if (sourceRows > MAX_QUESTION_IMPORT_ROWS) break;
+          consumeRow(row, row.number);
+        }
+        // Imports intentionally use the first worksheet, matching the former
+        // non-streaming behavior and the downloaded question template.
+        break;
       }
     }
   } catch (error) {
@@ -896,7 +914,9 @@ const previewQuestions = asyncHandler(async (req, res) => {
     });
   } */
   const existing = new Set();
-  const candidates = rows.filter((row) => row.data.subject);
+  // Rows already repeated in this workbook can never be imported. Excluding
+  // them here avoids needless database lookups for every duplicate row.
+  const candidates = rows.filter((row) => row.data.subject && !row.skipped);
   // Keep the duplicate lookup under MongoDB's query-size limit for very large
   // workbooks. Each batch is deliberately small enough for long questions too.
   for (let index = 0; index < candidates.length; index += IMPORT_ROW_BATCH_SIZE) {
@@ -933,24 +953,35 @@ const previewQuestions = asyncHandler(async (req, res) => {
     duplicateRows,
     hasExternalRows: true,
     // Do not display identical question-and-option duplicates in the portal
-    // preview. They remain marked as skipped in the import audit rows and are
-    // never inserted into Question.
+    // preview. Their aggregate is retained in duplicateRows; they are never
+    // inserted into Question or the preview-row collection.
     rows: rows.filter((row) => !row.skipped).slice(0, PREVIEW_ROW_SAMPLE_SIZE),
     createdBy: req.user._id,
   });
+  // Duplicates are reported through duplicateRows, but do not need audit
+  // documents: they cannot be previewed or imported. On a 50k workbook with
+  // repeated questions this reduces thousands of writes to only the unique
+  // and rejected rows that the administrator can act on.
+  const rowsToPersist = rows.filter((row) => !row.skipped);
   try {
-    for (let index = 0; index < rows.length; index += IMPORT_ROW_BATCH_SIZE) {
-      await QuestionImportRow.insertMany(
-        rows.slice(index, index + IMPORT_ROW_BATCH_SIZE).map((row) => ({
-          importBatch: item._id,
-          rowNumber: row.rowNumber,
-          data: row.data,
-          valid: row.valid,
-          skipped: row.skipped,
-          validationErrors: row.validationErrors,
-        })),
-        { ordered: true },
-      );
+    const writeWindowSize = IMPORT_ROW_BATCH_SIZE * IMPORT_ROW_WRITE_CONCURRENCY;
+    for (let index = 0; index < rowsToPersist.length; index += writeWindowSize) {
+      const batchWrites = [];
+      const windowEnd = Math.min(index + writeWindowSize, rowsToPersist.length);
+      for (let offset = index; offset < windowEnd; offset += IMPORT_ROW_BATCH_SIZE) {
+        batchWrites.push(QuestionImportRow.insertMany(
+          rowsToPersist.slice(offset, offset + IMPORT_ROW_BATCH_SIZE).map((row) => ({
+            importBatch: item._id,
+            rowNumber: row.rowNumber,
+            data: row.data,
+            valid: row.valid,
+            skipped: row.skipped,
+            validationErrors: row.validationErrors,
+          })),
+          { ordered: true },
+        ));
+      }
+      await Promise.all(batchWrites);
     }
   } catch (error) {
     await QuestionImportRow.deleteMany({ importBatch: item._id });

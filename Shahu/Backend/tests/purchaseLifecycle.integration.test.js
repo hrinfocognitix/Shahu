@@ -21,6 +21,7 @@ const AcademyRecord = require('../src/models/AcademyRecord');
 const AuditLog = require('../src/models/AuditLog');
 const Question = require('../src/models/Question');
 const QuestionImport = require('../src/models/QuestionImport');
+const QuestionImportRow = require('../src/models/QuestionImportRow');
 const { signAccessToken } = require('../src/helpers/jwt.helper');
 const { ROLES } = require('../src/constants/roles');
 
@@ -210,6 +211,9 @@ describe('course purchase lifecycle (isolated Mongo replica set)', () => {
     expect(preview.body.data).toMatchObject({ totalRows: 3, validRows: 1, invalidRows: 1, duplicateRows: 1, status: 'previewed' });
     uploadedFiles.push(preview.body.data.storedFilename);
     expect(preview.body.data.rows.some((row) => row.rowNumber === 3)).toBe(false);
+    // Duplicate rows are summarized on the import batch instead of being
+    // written individually, keeping large repeated workbooks fast to preview.
+    expect(await QuestionImportRow.countDocuments({ importBatch: preview.body.data._id })).toBe(2);
 
     const confirmed = await request(app)
       .post(`/api/v1/learning/questions/import/${preview.body.data._id}`)
