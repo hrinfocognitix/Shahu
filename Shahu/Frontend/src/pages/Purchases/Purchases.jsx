@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { apiClient } from '../../api/axios';
 import { useSelector } from 'react-redux';
-import { FiEye, FiEyeOff, FiKey, FiMail, FiPlus, FiX } from 'react-icons/fi';
+import { FiEye, FiEyeOff, FiKey, FiMail, FiPlus, FiSearch, FiX } from 'react-icons/fi';
 
 const emptyManualPurchase = {
   courseId: '', name: '', email: '', age: '', education: '', address: '', mobileNo: '',
@@ -14,6 +14,7 @@ export function Purchases() {
   const [items, setItems] = useState([]);
   const [manualPayments, setManualPayments] = useState([]);
   const [status, setStatus] = useState('');
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState('');
   const [credentials, setCredentials] = useState(null);
@@ -144,6 +145,17 @@ export function Purchases() {
       toast.error(error.response?.data?.message || 'Unable to update payment');
     } finally { setWorking(''); }
   };
+  const matchesSearch = (item) => {
+    const term = search.trim().toLowerCase();
+    if (!term) return true;
+    return [
+      item.course?.name, item.buyer?.name, item.buyer?.email, item.email,
+      item.buyer?.mobileNo, item.purchaseId, item.transactionReference,
+      item.gatewayReference, item.razorpay?.paymentId, item.utrNumber,
+    ].some((value) => String(value || '').toLowerCase().includes(term));
+  };
+  const latestPayments = items.filter(matchesSearch);
+  const latestGatewayPayments = manualPayments.filter(matchesSearch);
   return (
     <section className="page-enter">
       <div className="page-heading">
@@ -164,73 +176,28 @@ export function Purchases() {
         {user?.role === 'superadmin' ? <button className="btn btn-primary" onClick={() => setManualOpen(true)}><FiPlus /> Add manual payment</button> : null}
       </div>
       <div className="purchase-operation-list">
-        <h2>Payment history</h2>
-        {manualPayments.length ? manualPayments.map((item) => (
-          <article className="purchase-operation-card" key={item._id}>
-            <div><h3>{item.course?.name || 'Course'}</h3><span className={`status-pill ${String(item.status).toLowerCase()}`}>{item.status}</span></div>
-            <p><b>{item.buyer?.name || 'Buyer'}</b> · {item.email} · {item.buyer?.mobileNo || 'No mobile number'}</p>
-            <p>Amount: <b>₹{Number(item.amount || 0).toFixed(2)}</b> · Provider: <b>{item.provider || 'upi'}</b> · Status: <b>{item.status}</b> · Reference: {item.transactionReference}</p>
-            <p>UTR: <b>{item.utrNumber || 'Not submitted'}</b> · App: {item.paymentApp || '—'} · Submitted: {item.submittedAt ? new Date(item.submittedAt).toLocaleString('en-IN') : '—'}</p>
-            {item.paymentScreenshotUrl ? <p><a href={item.paymentScreenshotUrl} target="_blank" rel="noreferrer">Open screenshot</a></p> : null}
-            <div className="purchase-actions">
-              {item.provider === 'razorpay' ? <button disabled={working === item._id} onClick={() => reconcileRazorpayPayment(item)}>Check Razorpay status</button> : null}
-              {item.status === 'PENDING_VERIFICATION' ? <><button disabled={working === item._id} onClick={() => verifyManualPayment(item, 'approve')}>Approve</button><button disabled={working === item._id} className="danger" onClick={() => verifyManualPayment(item, 'reject')}>Reject</button><button onClick={() => navigator.clipboard?.writeText(item.utrNumber || '')}>Copy UTR</button></> : null}
-            </div>
-          </article>
-        )) : <div className="card student-empty">No manual UPI payments need verification.</div>}
-      </div>
-      <div className="purchase-operation-list">
-        {loading ? (
-          <div className="card student-empty">Loading transactions…</div>
-        ) : (
-          items.map((item) => (
-            <article className="purchase-operation-card" key={item._id}>
-              <div>
-                <h3>{item.course?.name}</h3>
-                <span className={`status-pill ${item.status}`}>{item.status}</span>
-              </div>
-              <p>
-                <b>{item.buyer?.name}</b> · {item.buyer?.mobileNo} · {item.buyer?.email}
-              </p>
-              <p>
-                Purchase ID: <b>{item.purchaseId || 'Legacy pending migration'}</b> · Transaction:{' '}
-                {item.transactionReference} · {item.paymentMethod} · {item.submittedFrom || 'android'}
-              </p>
-              {item.receiptNumber ? (
-                <p>
-                  Receipt: {item.receiptNumber}
-                  {item.receiptEmailedAt ? ' · emailed' : ''}
-                </p>
-              ) : null}
-              <p>
-                Payable: ₹{Number(item.pricing?.payablePrice || 0).toLocaleString('en-IN')} ·
-                Submitted {new Date(item.createdAt).toLocaleString('en-IN')}
-              </p>
-              {item.status === 'pending' && (
-                <div className="purchase-actions">
-                  <button
-                    disabled={working === item._id}
-                    onClick={() => verify(item, 'successful')}
-                  >
-                    Verify success
-                  </button>
-                  <button
-                    disabled={working === item._id}
-                    className="danger"
-                    onClick={() => verify(item, 'failed')}
-                  >
-                    Mark failed
-                  </button>
-                </div>
-              )}
-              {item.status === 'successful' && item.student ? (
-                <div className="purchase-actions">
-                  <button disabled={working === item._id} onClick={() => issueTemporaryPassword(item)}><FiKey /> Issue temporary password</button>
-                </div>
-              ) : null}
-            </article>
-          ))
+        <div className="student-toolbar">
+          <div><p className="eyebrow">LATEST PAYMENTS</p><h2>Course purchases</h2></div>
+          <label><FiSearch /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search student, email, payment ID, UTR…" /></label>
+        </div>
+        {loading ? <div className="card student-empty">Loading transactions…</div> : (
+          <div className="payment-account-table-wrap"><table><thead><tr><th>Latest payment</th><th>Student</th><th>Reference</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+            {latestPayments.map((item) => <tr key={item._id}>
+              <td>{item.course?.name || 'Course'}<br/><small>{new Date(item.createdAt).toLocaleString('en-IN')}</small></td>
+              <td><b>{item.buyer?.name || '—'}</b><br/><small>{item.buyer?.email || '—'} · {item.buyer?.mobileNo || '—'}</small></td>
+              <td>{item.transactionReference || '—'}<br/><small>{item.gatewayReference || item.purchaseId || '—'}</small></td>
+              <td>₹{Number(item.pricing?.payablePrice || 0).toLocaleString('en-IN')}</td>
+              <td><span className={`status-pill ${item.status}`}>{item.status}</span></td>
+              <td><div className="purchase-actions">{item.status === 'pending' ? <><button disabled={working === item._id} onClick={() => verify(item, 'successful')}>Verify success</button><button disabled={working === item._id} className="danger" onClick={() => verify(item, 'failed')}>Mark failed</button></> : null}{item.status === 'successful' && item.student ? <button disabled={working === item._id} onClick={() => issueTemporaryPassword(item)}><FiKey /> Temporary password</button> : null}</div></td>
+            </tr>)}
+            {!latestPayments.length ? <tr><td colSpan="6">No course purchases match this search.</td></tr> : null}
+          </tbody></table></div>
         )}
+        <h2>Gateway payment status</h2>
+        <div className="payment-account-table-wrap"><table><thead><tr><th>Course / student</th><th>Provider</th><th>Payment ID / UTR</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+          {latestGatewayPayments.map((item) => <tr key={item._id}><td>{item.course?.name || 'Course'}<br/><small>{item.buyer?.name || '—'} · {item.email || '—'}</small></td><td>{item.provider || 'upi'}</td><td>{item.razorpay?.paymentId || item.utrNumber || item.transactionReference || '—'}</td><td>₹{Number(item.amount || 0).toFixed(2)}</td><td><span className={`status-pill ${String(item.status).toLowerCase()}`}>{item.status}</span></td><td><div className="purchase-actions">{item.provider === 'razorpay' ? <button disabled={working === item._id} onClick={() => reconcileRazorpayPayment(item)}>Check Razorpay status</button> : null}{item.status === 'PENDING_VERIFICATION' ? <><button disabled={working === item._id} onClick={() => verifyManualPayment(item, 'approve')}>Approve</button><button disabled={working === item._id} className="danger" onClick={() => verifyManualPayment(item, 'reject')}>Reject</button></> : null}</div></td></tr>)}
+          {!latestGatewayPayments.length ? <tr><td colSpan="6">No gateway payments match this search.</td></tr> : null}
+        </tbody></table></div>
       </div>
       {credentials && (
         <div className="login-overlay">
