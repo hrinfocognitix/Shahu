@@ -44,6 +44,18 @@ const checkRazorpayPayment = asyncHandler(async (req, res) => {
   return apiResponse.success(res, { message: 'Payment status checked.', data });
 });
 
+const reconcileAdminRazorpayPayment = asyncHandler(async (req, res) => {
+  const data = await paymentIntentService.reconcileRazorpayPayment(
+    req.params.paymentId,
+    undefined,
+    { adminUser: req.user, ipAddress: req.ip }
+  );
+  return apiResponse.success(res, {
+    message: data.status === 'PAID' ? 'Razorpay confirms this payment was captured.' : 'Razorpay does not show a captured payment yet.',
+    data,
+  });
+});
+
 const razorpayWebhook = asyncHandler(async (req, res) => {
   const data = await paymentIntentService.processRazorpayWebhook(req.body, req.headers);
   return res.status(200).json({ success: true, data });
@@ -78,4 +90,4 @@ const reject = asyncHandler(async (req, res) => {
   return apiResponse.success(res, { message: 'Payment rejected.', data });
 });
 
-module.exports = { create, createAuthenticated, createRazorpayQr, createAuthenticatedRazorpayQr, createRazorpayCheckoutOrder, createAuthenticatedRazorpayCheckoutOrder, verifyRazorpayCheckoutPayment, markRazorpayCheckoutFailed, checkRazorpayPayment, razorpayWebhook, submit, status, listAdmin, approve, reject };
+module.exports = { create, createAuthenticated, createRazorpayQr, createAuthenticatedRazorpayQr, createRazorpayCheckoutOrder, createAuthenticatedRazorpayCheckoutOrder, verifyRazorpayCheckoutPayment, markRazorpayCheckoutFailed, checkRazorpayPayment, reconcileAdminRazorpayPayment, razorpayWebhook, submit, status, listAdmin, approve, reject };

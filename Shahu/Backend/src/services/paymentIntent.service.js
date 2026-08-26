@@ -319,9 +319,22 @@ async function verifyRazorpayCheckoutPayment(paymentId, token, body) {
     return { status: 'PAID', paymentId: String(intent._id), emailDelivery: approval.emailDelivery };
   }
 
-async function reconcileRazorpayPayment(paymentId, token) {
-  const intent = await requirePaymentAccess(paymentId, token);
+async function reconcileRazorpayPayment(paymentId, token, { adminUser, ipAddress } = {}) {
+  // Purchasers reconcile with their short-lived payment token. Administrators
+  // use the protected admin endpoint, so they never need that client token.
+  const intent = adminUser
+    ? await PaymentIntent.findById(paymentId)
+    : await requirePaymentAccess(paymentId, token);
+  if (!intent) throw new AppError('Payment not found.', STATUS_CODES.NOT_FOUND);
   if (intent.provider !== 'razorpay') throw new AppError('This is not a Razorpay payment.', STATUS_CODES.BAD_REQUEST);
+  if (adminUser) {
+    logger.info('Admin Razorpay reconciliation requested', {
+      paymentId: String(intent._id),
+      adminId: String(adminUser._id),
+      ipAddress,
+      currentStatus: intent.status,
+    });
+  }
   if (intent.status === 'PAID' && intent.enrollment) return { paymentId: String(intent._id), status: 'PAID', paidAt: intent.razorpay?.paidAt || null };
   if (intent.razorpay?.expiresAt && intent.razorpay.expiresAt < new Date()) { intent.status = 'EXPIRED'; await intent.save(); return { paymentId: String(intent._id), status: 'EXPIRED' }; }
   // Standard Checkout orders are reconciled by their order ID, not QR APIs.

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { apiClient } from '../../api/axios';
 import { useSelector } from 'react-redux';
-import { FiPlus, FiX } from 'react-icons/fi';
+import { FiEye, FiEyeOff, FiKey, FiMail, FiPlus, FiX } from 'react-icons/fi';
 
 const emptyManualPurchase = {
   courseId: '', name: '', email: '', age: '', education: '', address: '', mobileNo: '',
@@ -17,6 +17,7 @@ export function Purchases() {
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState('');
   const [credentials, setCredentials] = useState(null);
+  const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualForm, setManualForm] = useState(emptyManualPurchase);
   const [courses, setCourses] = useState([]);
@@ -70,9 +71,11 @@ export function Purchases() {
       });
       if (response.data.data?.temporaryPassword) {
         setCredentials({
+          studentId: response.data.data.student?._id,
           email: response.data.data.student?.email,
           temporaryPassword: response.data.data.temporaryPassword,
         });
+        setShowTemporaryPassword(false);
       }
       toast.success(
         nextStatus === 'successful'
@@ -84,6 +87,45 @@ export function Purchases() {
       toast.error(error.response?.data?.message || 'Unable to verify transaction');
     } finally {
       setWorking('');
+    }
+  };
+  const reconcileRazorpayPayment = async (item) => {
+    setWorking(item._id);
+    try {
+      const response = await apiClient.post(`/admin/payments/${item._id}/reconcile`);
+      toast.success(response.data.message || 'Razorpay payment status checked');
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to check this payment with Razorpay');
+    } finally { setWorking(''); }
+  };
+  const issueTemporaryPassword = async (item) => {
+    const studentId = item.student?._id || item.student;
+    if (!studentId) return toast.error('This transaction is not linked to a student account yet.');
+    const reason = window.prompt('Reason for issuing a new temporary password');
+    if (!reason) return;
+    setWorking(item._id);
+    try {
+      const response = await apiClient.post(`/course-purchases/students/${studentId}/reset-password`, { reason });
+      setCredentials(response.data.data);
+      setShowTemporaryPassword(false);
+      toast.success('New temporary password issued. It can now be shown or emailed once.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to issue temporary password');
+    } finally { setWorking(''); }
+  };
+  const emailTemporaryPassword = async () => {
+    if (!credentials?.studentId || !credentials?.temporaryPassword) return;
+    const reason = window.prompt('Reason for emailing this temporary password', 'Student requested login credentials');
+    if (!reason) return;
+    try {
+      await apiClient.post(`/course-purchases/students/${credentials.studentId}/email-temporary-password`, {
+        temporaryPassword: credentials.temporaryPassword,
+        reason,
+      });
+      toast.success(`Temporary password emailed to ${credentials.email}`);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to email temporary password');
     }
   };
   const verifyManualPayment = async (item, action) => {
@@ -130,7 +172,10 @@ export function Purchases() {
             <p>Amount: <b>₹{Number(item.amount || 0).toFixed(2)}</b> · Provider: <b>{item.provider || 'upi'}</b> · Status: <b>{item.status}</b> · Reference: {item.transactionReference}</p>
             <p>UTR: <b>{item.utrNumber || 'Not submitted'}</b> · App: {item.paymentApp || '—'} · Submitted: {item.submittedAt ? new Date(item.submittedAt).toLocaleString('en-IN') : '—'}</p>
             {item.paymentScreenshotUrl ? <p><a href={item.paymentScreenshotUrl} target="_blank" rel="noreferrer">Open screenshot</a></p> : null}
-            {item.status === 'PENDING_VERIFICATION' ? <div className="purchase-actions"><button disabled={working === item._id} onClick={() => verifyManualPayment(item, 'approve')}>Approve</button><button disabled={working === item._id} className="danger" onClick={() => verifyManualPayment(item, 'reject')}>Reject</button><button onClick={() => navigator.clipboard?.writeText(item.utrNumber || '')}>Copy UTR</button></div> : null}
+            <div className="purchase-actions">
+              {item.provider === 'razorpay' ? <button disabled={working === item._id} onClick={() => reconcileRazorpayPayment(item)}>Check Razorpay status</button> : null}
+              {item.status === 'PENDING_VERIFICATION' ? <><button disabled={working === item._id} onClick={() => verifyManualPayment(item, 'approve')}>Approve</button><button disabled={working === item._id} className="danger" onClick={() => verifyManualPayment(item, 'reject')}>Reject</button><button onClick={() => navigator.clipboard?.writeText(item.utrNumber || '')}>Copy UTR</button></> : null}
+            </div>
           </article>
         )) : <div className="card student-empty">No manual UPI payments need verification.</div>}
       </div>
@@ -178,6 +223,11 @@ export function Purchases() {
                   </button>
                 </div>
               )}
+              {item.status === 'successful' && item.student ? (
+                <div className="purchase-actions">
+                  <button disabled={working === item._id} onClick={() => issueTemporaryPassword(item)}><FiKey /> Issue temporary password</button>
+                </div>
+              ) : null}
             </article>
           ))
         )}
@@ -197,13 +247,15 @@ export function Purchases() {
                 <dd>{credentials.email}</dd>
               </div>
               <div>
-                <dt>Temporary password</dt>
-                <dd className="temporary-password">{credentials.temporaryPassword}</dd>
+                <dt>Latest temporary password</dt>
+                <dd className="temporary-password">{showTemporaryPassword ? credentials.temporaryPassword : '••••••••••••'}</dd>
               </div>
             </dl>
-            <button className="btn btn-primary" onClick={() => setCredentials(null)}>
-              I have saved it securely
-            </button>
+            <div className="purchase-actions">
+              <button type="button" onClick={() => setShowTemporaryPassword((value) => !value)}>{showTemporaryPassword ? <FiEyeOff /> : <FiEye />} {showTemporaryPassword ? 'Hide password' : 'Show password'}</button>
+              <button type="button" onClick={emailTemporaryPassword}><FiMail /> Email temporary password</button>
+              <button className="btn btn-primary" onClick={() => setCredentials(null)}>I have saved it securely</button>
+            </div>
           </article>
         </div>
       )}

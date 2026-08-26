@@ -7,6 +7,7 @@ const { ROLES } = require('../constants/roles');
 const router = express.Router();
 router.use(authenticate, authorize(ROLES.ADMIN, ROLES.SUPERADMIN));
 router.get('/', paymentController.listAdmin);
+router.post('/:paymentId/reconcile', paymentController.reconcileAdminRazorpayPayment);
 router.post('/:paymentId/approve', paymentController.approve);
 router.post('/:paymentId/reject', paymentController.reject);
 

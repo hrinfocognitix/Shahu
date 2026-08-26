@@ -840,6 +840,11 @@ module.exports = [
         authorize(ROLES.ADMIN, ROLES.SUPERADMIN),
         courseCommerceController.resetStudentPassword
       );
+      router.post(
+        '/students/:id/email-temporary-password',
+        authorize(ROLES.ADMIN, ROLES.SUPERADMIN),
+        courseCommerceController.emailTemporaryPassword
+      );
       router.patch(
         '/transactions/:id/verify',
         authorize(ROLES.ADMIN, ROLES.SUPERADMIN),

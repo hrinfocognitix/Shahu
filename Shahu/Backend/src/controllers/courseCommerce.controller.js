@@ -11,7 +11,7 @@ const StudentDevice = require('../models/StudentDevice');
 const CoursePurchaseOtp = require('../models/CoursePurchaseOtp');
 const AuditLog = require('../models/AuditLog');
 const User = require('../models/User');
-const { hashPassword } = require('../helpers/bcrypt.helper');
+const { hashPassword, comparePassword } = require('../helpers/bcrypt.helper');
 const crypto = require('crypto');
 const { ROLES } = require('../constants/roles');
 const { STATUS_CODES } = require('../constants/statusCodes');
@@ -773,6 +773,43 @@ const resetStudentPassword = asyncHandler(async (req, res) => {
   });
 });
 
+const emailTemporaryPassword = asyncHandler(async (req, res) => {
+  const temporaryPassword = String(req.body.temporaryPassword || '');
+  const reason = String(req.body.reason || '').trim();
+  if (!temporaryPassword || !reason) {
+    throw new AppError('The generated temporary password and an email reason are required', STATUS_CODES.BAD_REQUEST);
+  }
+  const student = await User.findOne({
+    _id: req.params.id,
+    role: ROLES.STUDENT,
+    isDeleted: { $ne: true },
+  }).select('+password');
+  if (!student) throw new AppError('Student not found', STATUS_CODES.NOT_FOUND);
+  // Never store plaintext credentials. This comparison makes sure that the
+  // administrator can email only the password currently issued to this user.
+  if (!await comparePassword(temporaryPassword, student.password)) {
+    throw new AppError('This temporary password is no longer current. Issue a new one before emailing it.', STATUS_CODES.CONFLICT);
+  }
+  const delivery = await sendEmail({
+    to: student.email,
+    subject: 'Your Shahu Academy temporary password',
+    text: `Dear ${student.name || 'Student'},\n\nAn administrator generated a temporary password for your Shahu Academy account.\n\nLogin email: ${student.email}\nTemporary password: ${temporaryPassword}\n\nPlease sign in and change this password immediately.`,
+    html: `<p>Dear ${student.name || 'Student'},</p><p>An administrator generated a temporary password for your Shahu Academy account.</p><p><strong>Login email:</strong> ${student.email}<br/><strong>Temporary password:</strong> ${temporaryPassword}</p><p>Please sign in and change this password immediately.</p>`,
+  });
+  if (delivery?.skipped) throw new AppError(delivery.reason || 'Email delivery is not configured', STATUS_CODES.SERVICE_UNAVAILABLE);
+  await AuditLog.create({
+    user: req.user._id,
+    role: req.user.role,
+    action: 'student_temporary_password_emailed',
+    module: 'students',
+    recordId: student._id,
+    newValue: { email: student.email },
+    reason,
+    ipAddress: req.ip,
+  });
+  return apiResponse.success(res, { message: 'Temporary password emailed to the student', data: { email: student.email } });
+});
+
 const studentDetails = asyncHandler(async (req, res) => {
   const student = await User.findOne({ _id: req.params.id, role: ROLES.STUDENT });
   if (!student) throw new AppError('Student not found', STATUS_CODES.NOT_FOUND);
@@ -1113,6 +1150,7 @@ module.exports = {
   myStudentProfile,
   overrideValidity,
   resetStudentPassword,
+  emailTemporaryPassword,
   normalizeValidity,
   buildPricingSnapshot,
 };
