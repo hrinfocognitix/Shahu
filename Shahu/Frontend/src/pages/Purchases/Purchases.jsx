@@ -156,6 +156,12 @@ export function Purchases() {
   };
   const latestPayments = items.filter(matchesSearch);
   const latestGatewayPayments = manualPayments.filter(matchesSearch);
+  // Only Razorpay-confirmed / admin-verified payments count towards collection.
+  // This intentionally mirrors the existing 2% Cognitix support-charge logic.
+  const paidGatewayPayments = manualPayments.filter((item) => ['PAID', 'VERIFIED'].includes(item.status));
+  const grossCollection = paidGatewayPayments.reduce((total, item) => total + Number(item.amount || 0), 0);
+  const cognitixDeduction = grossCollection * 0.02;
+  const netCollection = grossCollection - cognitixDeduction;
   return (
     <section className="page-enter">
       <div className="page-heading">
@@ -176,6 +182,11 @@ export function Purchases() {
         {user?.role === 'superadmin' ? <button className="btn btn-primary" onClick={() => setManualOpen(true)}><FiPlus /> Add manual payment</button> : null}
       </div>
       <div className="purchase-operation-list">
+        <div className="payment-account-totals">
+          <div className="payment-account-total"><span>Gross paid collection</span><strong>₹{grossCollection.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><small>{paidGatewayPayments.length} Razorpay paid / verified payment{paidGatewayPayments.length === 1 ? '' : 's'}</small></div>
+          <div className="payment-account-total payment-account-charge"><span>Cognitix support charges (2%)</span><strong>− ₹{cognitixDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><small>Amount payable to Cognitix.</small></div>
+          <div className="payment-account-total payment-account-net"><span>Net collection after deduction</span><strong>₹{netCollection.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><small>Gross collection minus the 2% support charge.</small></div>
+        </div>
         <div className="student-toolbar">
           <div><p className="eyebrow">LATEST PAYMENTS</p><h2>Course purchases</h2></div>
           <label><FiSearch /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search student, email, payment ID, UTR…" /></label>
