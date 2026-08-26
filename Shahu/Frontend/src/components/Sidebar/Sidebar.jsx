@@ -29,7 +29,7 @@ const links = [
   ['Subjects', ROUTES.subjects, FiClipboard],
   ['Syllabus', ROUTES.learning, FiClipboard],
   ['Courses', ROUTES.courses, FiBookOpen, ['admin', 'superadmin']],
-  ['Transactions', ROUTES.paymentAccounts, FiCreditCard, ['admin', 'superadmin']],
+  ['Transactions', ROUTES.coursePurchases, FiCreditCard, ['admin', 'superadmin']],
   ['Video Lectures', ROUTES.videos, FiVideo],
   ['Achievement Wall', ROUTES.achievements, FiAward, ['admin', 'superadmin']],
   ['Calendar', ROUTES.calendar, FiCalendar],
