@@ -442,7 +442,7 @@ export function Home() {
             <FiMapPin /> {text.address}
           </p>
           <p>
-            <FiUsers /> +91 00000 00000 · hello@lokarajaacademy.in
+            <FiUsers /> +91 9422592552 · chavanravsaheb5@gmail.com
           </p>
         </div>
         <div className="map-card">

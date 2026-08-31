@@ -7,6 +7,7 @@ const env = require('../config/env');
 const { ROLES } = require('../constants/roles');
 const LoginOtp = require('../models/LoginOtp');
 const Enrollment = require('../models/Enrollment');
+const User = require('../models/User');
 const { sendEmail } = require('./email.service');
 const { signAccessToken, signRefreshToken, verifyRefreshToken } = require('../helpers/jwt.helper');
 
@@ -153,13 +154,38 @@ async function verifyStudentOtp({ email, otp }) {
 
 async function requestStudentPasswordReset({ email }) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
-  const user = await authRepository.findUserByEmailWithSecrets(normalizedEmail);
+  let user = await authRepository.findUserByEmailWithSecrets(normalizedEmail);
   if (!user || !user.isActive) {
     return { eligible: false, message: 'If the email address is valid, a temporary password will be sent.' };
   }
   const hasPurchasedCourse = user.role !== ROLES.STUDENT || await Enrollment.exists({ student: user._id });
   if (!hasPurchasedCourse) {
     return { eligible: false, message: 'You are not a registered student. Please purchase a course first.' };
+  }
+
+  const cooldownMs = 12 * 60 * 60 * 1000;
+  const cutoff = new Date(Date.now() - cooldownMs);
+  const cooldownMessage = 'A temporary password can be requested only once every 12 hours. Please try again after the 12-hour cooldown.';
+  if (user.passwordResetRequestedAt && user.passwordResetRequestedAt > cutoff) {
+    return { eligible: false, message: cooldownMessage, cooldownUntil: new Date(user.passwordResetRequestedAt.getTime() + cooldownMs) };
+  }
+  // Atomically claim the reset window. This protects against two browser/app
+  // taps racing and sending different temporary passwords to the same email.
+  const requestedAt = new Date();
+  user = await User.findOneAndUpdate(
+    {
+      _id: user._id,
+      $or: [
+        { passwordResetRequestedAt: { $exists: false } },
+        { passwordResetRequestedAt: null },
+        { passwordResetRequestedAt: { $lte: cutoff } },
+      ],
+    },
+    { $set: { passwordResetRequestedAt: requestedAt } },
+    { new: true }
+  ).select('+password +authVersion +refreshTokens +passwordResetRequestedAt');
+  if (!user) {
+    return { eligible: false, message: cooldownMessage, cooldownUntil: new Date(Date.now() + cooldownMs) };
   }
 
   const temporaryPassword = crypto.randomBytes(9).toString('base64url');
@@ -182,7 +208,7 @@ async function requestStudentPasswordReset({ email }) {
   } catch {
     throw new AppError('Password was reset, but the email could not be sent. Please contact the academy.', STATUS_CODES.SERVICE_UNAVAILABLE);
   }
-  return { eligible: true, message: 'A new temporary password has been sent securely.' };
+  return { eligible: true, message: 'A new temporary password has been sent securely. Password reset is available again after 12 hours.', cooldownUntil: new Date(requestedAt.getTime() + cooldownMs) };
 }
 
 async function refresh(refreshToken) {

@@ -3,7 +3,7 @@ const User = require('../models/User');
 const create = (payload) => User.create(payload);
 const findByEmail = (email, includeSecrets = false) => {
   const query = User.findOne({ email });
-  return includeSecrets ? query.select('+password +refreshTokens +authVersion') : query;
+  return includeSecrets ? query.select('+password +refreshTokens +authVersion +passwordResetRequestedAt') : query;
 };
 const findByLoginIdentifier = (identifier, includeSecrets = false) => {
   const value = String(identifier || '').trim().toLowerCase();

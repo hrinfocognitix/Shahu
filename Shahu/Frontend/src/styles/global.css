@@ -946,3 +946,4 @@ input::placeholder, textarea::placeholder { color: #4b5563; opacity: 1; }
 .app-version-chip { display: inline-flex; align-items: center; gap: .35rem; padding: .42rem .6rem; border: 1px solid var(--sand); border-radius: 10px; color: var(--text-secondary); background: var(--cream); font-size: .68rem; white-space: nowrap; }
 .app-version-chip strong { color: var(--primary-variant); font-size: .72rem; }
 @media (max-width: 760px) { .app-version-chip { display: none; } }
+.forgot-password-support { margin: -.45rem 0 0; color: var(--error); font-size: .75rem; line-height: 1.45; }.forgot-password-support a { color: inherit; font-weight: 800; }

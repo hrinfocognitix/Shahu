@@ -29,6 +29,9 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // A password-reset request replaces the current password, so prevent
+    // repeated clicks from issuing multiple different credentials by email.
+    passwordResetRequestedAt: { type: Date, select: false },
     authVersion: { type: Number, default: 0, min: 0, select: false },
     role: {
       type: String,
