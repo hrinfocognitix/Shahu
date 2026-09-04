@@ -851,6 +851,11 @@ module.exports = [
         courseCommerceController.verifyPurchase
       );
       router.patch(
+        '/transactions/:id/email',
+        authorize(ROLES.ADMIN, ROLES.SUPERADMIN),
+        courseCommerceController.updateManualPurchaseEmail
+      );
+      router.patch(
         '/enrollments/:id/validity',
         authorize(ROLES.ADMIN, ROLES.SUPERADMIN),
         courseCommerceController.overrideValidity

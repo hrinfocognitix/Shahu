@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { apiClient } from '../../api/axios';
 import { useSelector } from 'react-redux';
-import { FiEye, FiEyeOff, FiKey, FiMail, FiPlus, FiSearch, FiX } from 'react-icons/fi';
+import { FiEdit2, FiEye, FiEyeOff, FiKey, FiMail, FiPlus, FiSearch, FiX } from 'react-icons/fi';
 
 const emptyManualPurchase = {
   courseId: '', name: '', email: '', age: '', education: '', address: '', mobileNo: '',
@@ -87,6 +87,23 @@ export function Purchases() {
       load();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Unable to verify transaction');
+    } finally {
+      setWorking('');
+    }
+  };
+  const editManualTransactionEmail = async (item) => {
+    const email = window.prompt('Student email address', item.buyer?.email || '');
+    if (email === null) return;
+    const nextEmail = email.trim().toLowerCase();
+    if (!nextEmail || nextEmail === String(item.buyer?.email || '').trim().toLowerCase()) return;
+    setWorking(item._id);
+    try {
+      const response = await apiClient.patch(`/course-purchases/transactions/${item._id}/email`, { email: nextEmail });
+      const updated = response.data.data;
+      setItems((current) => current.map((entry) => entry._id === item._id ? { ...entry, ...updated, buyer: { ...entry.buyer, ...updated.buyer } } : entry));
+      toast.success('Transaction email updated');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to update transaction email');
     } finally {
       setWorking('');
     }
@@ -196,7 +213,7 @@ export function Purchases() {
           <div className="payment-account-table-wrap"><table><thead><tr><th>Latest payment</th><th>Student</th><th>Reference</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody>
             {latestPayments.map((item) => <tr key={item._id}>
               <td>{item.course?.name || 'Course'}<br/><small>{new Date(item.createdAt).toLocaleString('en-IN')}</small></td>
-              <td><b>{item.buyer?.name || '—'}</b><br/><small>{item.buyer?.email || '—'} · {item.buyer?.mobileNo || '—'}</small></td>
+              <td><b>{item.buyer?.name || '—'}</b><br/><small>{item.buyer?.email || '—'} · {item.buyer?.mobileNo || '—'}</small>{canManageManualPayments && item.submittedFrom === 'laptop' ? <button className="purchase-email-edit" disabled={working === item._id} onClick={() => editManualTransactionEmail(item)}><FiEdit2 /> Edit email</button> : null}</td>
               <td>{item.transactionReference || '—'}<br/><small>{item.gatewayReference || item.purchaseId || '—'}</small></td>
               <td>₹{Number(item.pricing?.payablePrice || 0).toLocaleString('en-IN')}</td>
               <td><span className={`status-pill ${item.status}`}>{item.status}</span></td>

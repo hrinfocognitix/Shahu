@@ -443,6 +443,51 @@ const listPurchases = asyncHandler(async (req, res) => {
   return apiResponse.success(res, { message: 'Course purchases fetched', data: items });
 });
 
+// This endpoint changes only the email, and only for a payment entered manually
+// from the laptop. Android-originated transaction data remains read-only.
+const updateManualPurchaseEmail = asyncHandler(async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) {
+    throw new AppError('Enter a valid email address', STATUS_CODES.BAD_REQUEST);
+  }
+
+  const transaction = await Transaction.findById(req.params.id);
+  if (!transaction) throw new AppError('Transaction not found', STATUS_CODES.NOT_FOUND);
+  if (transaction.submittedFrom !== 'laptop') {
+    throw new AppError('Only manually added transactions can have their email edited', STATUS_CODES.FORBIDDEN);
+  }
+
+  const previousEmail = transaction.buyer.email;
+  if (previousEmail === email) {
+    return apiResponse.success(res, { message: 'Email is already up to date', data: transaction });
+  }
+
+  // Keep the student login email consistent for a manually added transaction that
+  // has already been verified, without allowing an existing account to be reused.
+  if (transaction.student) {
+    const student = await User.findById(transaction.student).select('_id email');
+    if (student && student.email !== email) {
+      const emailInUse = await User.exists({ email, _id: { $ne: student._id } });
+      if (emailInUse) throw duplicateAccountError();
+      student.email = email;
+      await student.save();
+    }
+  }
+
+  transaction.buyer.email = email;
+  await transaction.save();
+  if (transaction.legacyPurchase) {
+    await AcademyRecord.findByIdAndUpdate(transaction.legacyPurchase, { $set: { 'payload.email': email } });
+  }
+  await AuditLog.create({
+    user: req.user._id, role: req.user.role, action: 'manual_transaction_email_updated',
+    module: 'transactions', recordId: transaction._id,
+    oldValue: { email: previousEmail }, newValue: { email },
+    reason: 'Manual transaction email correction', ipAddress: req.ip,
+  });
+  return apiResponse.success(res, { message: 'Transaction email updated', data: transaction });
+});
+
 const coursePaymentOptions = asyncHandler(async (req, res) => {
   const course = await Course.findOne({
     _id: req.params.courseId,
@@ -1143,6 +1188,7 @@ module.exports = {
   createPurchase,
   manuallyEnrollStudent,
   listPurchases,
+  updateManualPurchaseEmail,
   coursePaymentOptions,
   verifyPurchase,
   studentList,
