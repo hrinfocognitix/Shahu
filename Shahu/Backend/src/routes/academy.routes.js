@@ -811,7 +811,7 @@ module.exports = [
       router.use(authenticate);
       router.post(
         '/manual',
-        authorize(ROLES.SUPERADMIN),
+        authorize(ROLES.ADMIN, ROLES.SUPERADMIN),
         courseCommerceController.createPurchase
       );
       router.get('/me', authorize(ROLES.STUDENT), courseCommerceController.myStudentProfile);

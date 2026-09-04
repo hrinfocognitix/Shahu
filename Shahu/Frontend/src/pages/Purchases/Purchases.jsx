@@ -11,6 +11,7 @@ const emptyManualPurchase = {
 
 export function Purchases() {
   const user = useSelector((state) => state.auth.user);
+  const canManageManualPayments = ['admin', 'superadmin'].includes(user?.role);
   const [items, setItems] = useState([]);
   const [manualPayments, setManualPayments] = useState([]);
   const [status, setStatus] = useState('');
@@ -39,11 +40,11 @@ export function Purchases() {
     load();
   }, [status]);
   useEffect(() => {
-    if (user?.role !== 'superadmin') return;
+    if (!canManageManualPayments) return;
     apiClient.get('/courses', { params: { limit: 100, status: 'active' } })
       .then((response) => setCourses(response.data.data || []))
       .catch(() => setCourses([]));
-  }, [user?.role]);
+  }, [canManageManualPayments]);
   const submitManualPurchase = async (event) => {
     event.preventDefault();
     try {
@@ -179,7 +180,7 @@ export function Purchases() {
           <option value="successful">Successful</option>
           <option value="failed">Failed</option>
         </select>
-        {user?.role === 'superadmin' ? <button className="btn btn-primary" onClick={() => setManualOpen(true)}><FiPlus /> Add manual payment</button> : null}
+        {canManageManualPayments ? <button className="btn btn-primary" onClick={() => setManualOpen(true)}><FiPlus /> Add manual payment</button> : null}
       </div>
       <div className="purchase-operation-list">
         <div className="payment-account-totals">
@@ -241,9 +242,9 @@ export function Purchases() {
         <div className="login-overlay" onMouseDown={() => setManualOpen(false)}>
           <form className="student-form manual-payment-form" onMouseDown={(event) => event.stopPropagation()} onSubmit={submitManualPurchase}>
             <button className="modal-close" onClick={() => setManualOpen(false)} type="button"><FiX /></button>
-            <p className="eyebrow">SUPERADMIN ONLY</p>
-            <h2>Add laptop payment</h2>
-            <p>Submit the payment first. The student account is created only after you verify it as successful.</p>
+            <p className="eyebrow">ADMIN / SUPERADMIN</p>
+            <h2>Add manual payment</h2>
+            <p>Submit the payment first. In Latest payments, select Verify success to create the student enrollment and activate course access.</p>
             <select required value={manualForm.courseId} onChange={(event) => setManualForm((value) => ({ ...value, courseId: event.target.value }))}><option value="">Select course</option>{courses.map((course) => <option key={course._id} value={course._id}>{course.name}</option>)}</select>
             <div className="student-fields"><input placeholder="Student full name" required value={manualForm.name} onChange={(event) => setManualForm((value) => ({ ...value, name: event.target.value }))} /><input placeholder="Student email" required type="email" value={manualForm.email} onChange={(event) => setManualForm((value) => ({ ...value, email: event.target.value }))} /><input placeholder="Mobile number" required value={manualForm.mobileNo} onChange={(event) => setManualForm((value) => ({ ...value, mobileNo: event.target.value }))} /><input min="1" placeholder="Age" required type="number" value={manualForm.age} onChange={(event) => setManualForm((value) => ({ ...value, age: event.target.value }))} /><input placeholder="Education" required value={manualForm.education} onChange={(event) => setManualForm((value) => ({ ...value, education: event.target.value }))} /><input placeholder="Transaction / UTR ID" required value={manualForm.transactionId} onChange={(event) => setManualForm((value) => ({ ...value, transactionId: event.target.value }))} /><select required value={manualForm.paymentMethod} onChange={(event) => setManualForm((value) => ({ ...value, paymentMethod: event.target.value }))}><option value="gpay">GPay</option><option value="phonepe">PhonePe</option><option value="paytm">Paytm</option><option value="bank-transfer">Bank transfer</option><option value="cash">Cash</option><option value="other">Other</option></select><input required type="date" value={manualForm.paymentDate} onChange={(event) => setManualForm((value) => ({ ...value, paymentDate: event.target.value }))} /></div>
             <textarea placeholder="Address" required value={manualForm.address} onChange={(event) => setManualForm((value) => ({ ...value, address: event.target.value }))} />

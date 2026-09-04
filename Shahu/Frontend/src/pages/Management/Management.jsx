@@ -91,6 +91,7 @@ const initialAccount = {
   status: 'active',
 };
 const initialRecord = { title: '', description: '', course: '', subject: '', scheduledAt: '', status: 'active', resourceUrl: '' };
+const initialContentRecord = { ...initialRecord, status: 'published' };
 const initialAchievement = {
   title: '',
   description: '',
@@ -243,6 +244,8 @@ export function Management({ resource }) {
           ? initialAccount
           : resource === 'achievements'
             ? initialAchievement
+            : ['materials', 'slides', 'notes', 'question-papers', 'videos'].includes(resource)
+              ? initialContentRecord
             : initialRecord
     );
     setOpen(true);

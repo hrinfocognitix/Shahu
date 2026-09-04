@@ -13,7 +13,10 @@ function errorHandler(error, req, res, next) {
   if (req.file?.path) {
     fs.unlink(req.file.path).catch(() => undefined);
   }
-  const statusCode = error.statusCode || 500;
+  // Mongoose validation failures are caused by invalid request data, not an
+  // unavailable server. Returning 400 lets the admin UI display the useful
+  // validation message (for example an unsupported record status).
+  const statusCode = error.statusCode || (error.name === 'ValidationError' || error.name === 'CastError' ? 400 : 500);
   const isProduction = process.env.NODE_ENV === 'production';
   logger.error('API action error', {
     requestId: req.requestId,

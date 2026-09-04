@@ -105,10 +105,10 @@ function buildPricingSnapshot(course) {
 }
 
 const createPurchase = asyncHandler(async (req, res) => {
-  const isManualSubmission = req.user?.role === ROLES.SUPERADMIN;
+  const isManualSubmission = [ROLES.ADMIN, ROLES.SUPERADMIN].includes(req.user?.role);
   if (String(req.get('X-Client-Platform') || '').toLowerCase() !== 'android' && !isManualSubmission) {
     throw new AppError(
-      'Course purchases can be submitted only through the Android application or by superadmin from the laptop',
+      'Course purchases can be submitted only through the Android application or by an admin from the laptop',
       STATUS_CODES.FORBIDDEN
     );
   }
@@ -490,8 +490,8 @@ const verifyPurchase = asyncHandler(async (req, res) => {
     throw new AppError('Status must be successful or failed', STATUS_CODES.BAD_REQUEST);
   const transaction = await Transaction.findById(req.params.id).populate('course');
   if (!transaction) throw new AppError('Transaction not found', STATUS_CODES.NOT_FOUND);
-  if (transaction.submittedFrom === 'laptop' && req.user.role !== ROLES.SUPERADMIN) {
-    throw new AppError('Only superadmin can verify a laptop payment submission', STATUS_CODES.FORBIDDEN);
+  if (transaction.submittedFrom === 'laptop' && ![ROLES.ADMIN, ROLES.SUPERADMIN].includes(req.user.role)) {
+    throw new AppError('Only an admin or superadmin can verify a laptop payment submission', STATUS_CODES.FORBIDDEN);
   }
   if (transaction.status === status)
     return apiResponse.success(res, {
