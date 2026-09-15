@@ -316,7 +316,12 @@ async function verifyRazorpayCheckoutPayment(paymentId, token, body) {
     if (payment.order_id !== orderId || Number(payment.amount) !== Number(intent.amountMinor) || payment.currency !== 'INR' || payment.status !== 'captured') throw new AppError('Payment is not captured or does not match this order.', STATUS_CODES.BAD_REQUEST);
     intent.status = 'PAID'; intent.razorpay.paymentId = razorpayPaymentId; intent.razorpay.signature = signature; intent.razorpay.paidAt = new Date(); await intent.save();
     const approval = await approvePayment(intent._id, { role: 'system' }, 'razorpay-checkout', { expectedStatus: 'PAID', finalStatus: 'PAID', auditAction: 'razorpay_checkout_verified', reason: 'Verified Razorpay Standard Checkout signature and captured payment' });
-    return { status: 'PAID', paymentId: String(intent._id), emailDelivery: approval.emailDelivery };
+    return {
+      status: 'PAID',
+      paymentId: String(intent._id),
+      emailDelivery: approval.emailDelivery,
+      ...(approval.firstLoginCredentials ? { firstLoginCredentials: approval.firstLoginCredentials } : {}),
+    };
   }
 
 async function reconcileRazorpayPayment(paymentId, token, { adminUser, ipAddress } = {}) {
@@ -478,7 +483,7 @@ async function approvePayment(paymentId, admin, ip, options = {}) {
       if (!student) {
         temporaryPassword = crypto.randomBytes(9).toString('base64url');
         [student] = await User.create([{ name: locked.buyer?.name || locked.email, email: locked.email,
-          password: await hashPassword(temporaryPassword), role: ROLES.STUDENT, mustChangePassword: false,
+          password: await hashPassword(temporaryPassword), role: ROLES.STUDENT, mustChangePassword: true,
           profile: { phone: locked.buyer?.mobileNo, mobile: locked.buyer?.mobileNo, address: locked.buyer?.address, age: locked.buyer?.age, educationQualification: locked.buyer?.education, admissionDate: new Date(), paymentStatus: 'successful', studentStatus: 'active' }, createdBy: admin._id, updatedBy: admin._id }], { session });
       }
       enrolledCourse = await Course.findById(locked.course).session(session);
@@ -525,7 +530,7 @@ async function approvePayment(paymentId, admin, ip, options = {}) {
   if (transaction && enrollment && student && enrolledCourse) {
     try {
       transaction.receiptNumber = transaction.receiptNumber || `RCP-${transaction.purchaseId}`;
-      const receiptPdf = createReceiptPdf({ receiptNumber: transaction.receiptNumber, purchaseId: transaction.purchaseId, student, course: enrolledCourse, transaction, enrollment });
+      const receiptPdf = createReceiptPdf({ receiptNumber: transaction.receiptNumber, purchaseId: transaction.purchaseId, student, course: enrolledCourse, transaction, enrollment, temporaryPassword });
       const email = createPurchaseConfirmationEmail({ student, course: enrolledCourse, transaction, enrollment, temporaryPassword });
       const delivery = await sendEmail({
         to: verified.email,
@@ -544,7 +549,17 @@ async function approvePayment(paymentId, admin, ip, options = {}) {
     }
     await transaction.save();
   }
-  return { intent: verified, enrollment, alreadyVerified: false, emailDelivery };
+  // Returned only to the payment-verification request carrying the unguessable,
+  // short-lived payment token. Plaintext credentials are never persisted.
+  return {
+    intent: verified,
+    enrollment,
+    alreadyVerified: false,
+    emailDelivery,
+    ...(temporaryPassword ? {
+      firstLoginCredentials: { email: student.email, temporaryPassword },
+    } : {}),
+  };
 }
 
 async function rejectPayment(paymentId, admin, reason, ip) {

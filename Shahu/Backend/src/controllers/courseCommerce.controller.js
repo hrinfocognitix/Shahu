@@ -407,7 +407,7 @@ const manuallyEnrollStudent = asyncHandler(async (req, res) => {
   }
 
   try {
-    const receiptPdf = createReceiptPdf({ receiptNumber: transaction.receiptNumber, purchaseId, student, course, transaction, enrollment });
+    const receiptPdf = createReceiptPdf({ receiptNumber: transaction.receiptNumber, purchaseId, student, course, transaction, enrollment, temporaryPassword });
     const purchaseEmail = createPurchaseConfirmationEmail({ student, course, transaction, enrollment, temporaryPassword });
     const delivery = await sendEmail({
       to: student.email, ...purchaseEmail,
@@ -738,6 +738,7 @@ const verifyPurchase = asyncHandler(async (req, res) => {
       course: transaction.course,
       transaction,
       enrollment,
+      temporaryPassword,
     });
     const transactionId = transaction.gatewayReference || transaction.transactionReference || transaction.purchaseId;
     const purchaseEmail = createPurchaseConfirmationEmail({ student, course: transaction.course, transaction, enrollment, temporaryPassword });

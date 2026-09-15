@@ -13,7 +13,7 @@ function pdfText(value, x, y, size = 10, font = 'F1', color = '0.16 0.15 0.13') 
   return `BT /${font} ${size} Tf ${color} rg 1 0 0 1 ${x} ${y} Tm (${escapePdfText(value)}) Tj ET`;
 }
 
-function createReceiptPdf({ receiptNumber, purchaseId, student, course, transaction, enrollment }) {
+function createReceiptPdf({ receiptNumber, purchaseId, student, course, transaction, enrollment, temporaryPassword }) {
   const paidMinor = transaction.pricing?.paidAmountMinor;
   const paid = paidMinor != null ? Number(paidMinor) / 100 : Number(transaction.pricing?.paidAmount || 0);
   const paymentReference = transaction.gatewayReference || transaction.transactionReference || purchaseId;
@@ -36,6 +36,11 @@ function createReceiptPdf({ receiptNumber, purchaseId, student, course, transact
     ['Validity start date', formatDate(enrollment.validFrom)],
     ['Validity end date', formatDate(enrollment.validUntil)],
     ['Enrollment status', enrollment.status || 'active'],
+    ...(temporaryPassword ? [
+      ['First-time login email', student.email || transaction.buyer?.email || '-'],
+      ['Temporary password', temporaryPassword],
+      ['Password action', 'Change it after first sign-in'],
+    ] : []),
   ];
 
   const content = [
@@ -55,14 +60,14 @@ function createReceiptPdf({ receiptNumber, purchaseId, student, course, transact
       pdfText(label, 52, 596 - index * 21, 9, 'F1', '0.40 0.36 0.31'),
       pdfText(value, 255, 596 - index * 21, 9, 'F2'),
     ]),
-    'q 0.95 0.93 0.89 rg 40 234 515 174 re f Q',
+    'q 0.95 0.93 0.89 rg 40 171 515 237 re f Q',
     pdfText('COURSE AND ACCESS VALIDITY', 52, 388, 11, 'F2', '0.09 0.25 0.23'),
     ...courseRows.flatMap(([label, value], index) => [
       pdfText(label, 52, 364 - index * 21, 9, 'F1', '0.40 0.36 0.31'),
       pdfText(value, 255, 364 - index * 21, 9, 'F2'),
     ]),
-    '0.75 0.70 0.62 RG 40 210 m 555 210 l S',
-    pdfText('Keep this receipt for your records. Course access is active for the validity period above.', 50, 188, 9, 'F1', '0.40 0.36 0.31'),
+    '0.75 0.70 0.62 RG 40 147 m 555 147 l S',
+    pdfText('Keep this receipt for your records. Course access is active for the validity period above.', 50, 125, 9, 'F1', '0.40 0.36 0.31'),
     pdfText('GS BY Anand Sir - Academy support and learning portal', 50, 48, 8, 'F1', '0.40 0.36 0.31'),
   ].join('\n');
   const objects = [

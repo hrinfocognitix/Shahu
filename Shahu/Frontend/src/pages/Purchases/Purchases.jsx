@@ -211,7 +211,7 @@ export function Purchases() {
         </div>
         {loading ? <div className="card student-empty">Loading transactions…</div> : (
           <div className="payment-account-table-wrap"><table><thead><tr><th>Latest payment</th><th>Student</th><th>Reference</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-            {latestPayments.map((item) => <tr key={item._id}>
+            {latestPayments.map((item) => <tr key={item._id} className={item.submittedFrom === 'laptop' ? 'manual-transaction-row' : ''}>
               <td>{item.course?.name || 'Course'}<br/><small>{new Date(item.createdAt).toLocaleString('en-IN')}</small></td>
               <td><b>{item.buyer?.name || '—'}</b><br/><small>{item.buyer?.email || '—'} · {item.buyer?.mobileNo || '—'}</small>{canManageManualPayments && item.submittedFrom === 'laptop' ? <button className="purchase-email-edit" disabled={working === item._id} onClick={() => editManualTransactionEmail(item)}><FiEdit2 /> Edit email</button> : null}</td>
               <td>{item.transactionReference || '—'}<br/><small>{item.gatewayReference || item.purchaseId || '—'}</small></td>
