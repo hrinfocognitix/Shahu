@@ -59,7 +59,7 @@ const linkStudent = asyncHandler(async (req, res) => {
   if (req.body?.welcome === true && req.user.role === 'student') {
     const studentName = String(req.user.name || '').trim();
     void sendNotificationPush({
-      title: 'Welcome to Shahu Academy',
+      title: 'Welcome to GS BY Anand Sir Academy',
       body: studentName ? `Welcome back, ${studentName}! Your learning dashboard is ready.` : 'Welcome back! Your learning dashboard is ready.',
       student: req.user._id,
       data: { type: 'login_welcome' },

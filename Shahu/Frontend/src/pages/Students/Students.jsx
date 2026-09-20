@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   FiCalendar,
+  FiChevronDown,
   FiCreditCard,
   FiDownload,
   FiKey,
@@ -30,6 +31,7 @@ export function Students() {
   const [sort, setSort] = useState('newest');
   const [courses, setCourses] = useState([]);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState('10');
   const [meta, setMeta] = useState({ totalPages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState(null);
@@ -42,11 +44,19 @@ export function Students() {
   const load = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get('/course-purchases/students', {
-        params: { page, limit: 20, search, status, course, purchaseFrom, purchaseTo, sort },
-      });
-      setStudents(response.data.data || []);
-      setMeta(response.data.meta || { totalPages: 1, total: 0 });
+      const filters = { search, status, course, purchaseFrom, purchaseTo, sort };
+      const limit = pageSize === 'all' ? 100 : Number(pageSize);
+      const response = await apiClient.get('/course-purchases/students', { params: { ...filters, page, limit } });
+      const firstPage = response.data.data || [];
+      const responseMeta = response.data.meta || { totalPages: 1, total: 0 };
+      if (pageSize === 'all' && responseMeta.totalPages > 1) {
+        const remaining = await Promise.all(Array.from({ length: responseMeta.totalPages - 1 }, (_, index) => apiClient.get('/course-purchases/students', { params: { ...filters, page: index + 2, limit } })));
+        setStudents([...firstPage, ...remaining.flatMap((item) => item.data.data || [])]);
+        setMeta({ ...responseMeta, page: 1, totalPages: 1, limit: responseMeta.total });
+      } else {
+        setStudents(firstPage);
+        setMeta(responseMeta);
+      }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Unable to load students');
     } finally {
@@ -56,7 +66,7 @@ export function Students() {
   useEffect(() => {
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
-  }, [page, search, status, course, purchaseFrom, purchaseTo, sort]);
+  }, [page, pageSize, search, status, course, purchaseFrom, purchaseTo, sort]);
   useEffect(() => {
     apiClient
       .get('/courses', { params: { limit: 100 } })
@@ -65,6 +75,10 @@ export function Students() {
   }, []);
 
   const openStudent = async (student) => {
+    if (details?.student?._id === student._id) {
+      setDetails(null);
+      return;
+    }
     setDetailsLoading(true);
     try {
       const response = await apiClient.get(`/course-purchases/students/${student._id}`);
@@ -267,14 +281,25 @@ export function Students() {
           <option value="name">Name A–Z</option>
           <option value="validity">Validity ending soon</option>
         </select>
+        <label className="student-page-size">
+          Show
+          <select value={pageSize} onChange={(event) => { setPageSize(event.target.value); setPage(1); }}>
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="40">40</option>
+            <option value="100">100</option>
+            <option value="all">All</option>
+          </select>
+        </label>
       </div>
       {loading ? (
         <div className="card student-empty">Loading students…</div>
       ) : students.length ? (
-        <div className="student-card-grid">
+        <div className="student-list-scroll">
+          <div className="student-list">
           {students.map((student) => (
             <button
-              className="student-summary-card"
+              className={`student-list-row ${details?.student?._id === student._id ? 'is-expanded' : ''}`}
               key={student._id}
               onClick={() => openStudent(student)}
             >
@@ -294,28 +319,21 @@ export function Students() {
                   {student.latestEnrollment?.status || 'no purchase'}
                 </span>
               </div>
-              {student.purchasedCourses?.length ? (
-                <div className="student-purchased-course-list">
-                  {student.purchasedCourses.map((purchase, index) => (
-                    <small key={`${purchase.course}-${index}`}>
-                      {purchase.course}{purchase.courseCode ? ` · ${purchase.courseCode}` : ''} · {purchase.paymentMethod} · {money(purchase.paidAmount)} · {purchase.remainingDays ?? 0} days remaining
-                    </small>
-                  ))}
-                </div>
-              ) : null}
               <small>
                 Valid {date(student.latestEnrollment?.validFrom)} — {date(student.latestEnrollment?.validUntil)} · {student.latestEnrollment?.remainingDays ?? 0} days remaining
               </small>
               <small>
                 <FiSmartphone /> {student.deviceUuid || 'UUID not supplied'}
               </small>
+              <FiChevronDown className="student-row-expand" aria-hidden="true" />
             </button>
           ))}
+          </div>
         </div>
       ) : (
         <div className="card student-empty">No purchased-course students match these filters.</div>
       )}
-      <div className="student-pagination">
+      {pageSize !== 'all' ? <div className="student-pagination">
         <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
           Previous
         </button>
@@ -325,16 +343,13 @@ export function Students() {
         <button disabled={page >= meta.totalPages} onClick={() => setPage((value) => value + 1)}>
           Next
         </button>
-      </div>
+      </div> : null}
       {(details || detailsLoading) && (
-        <div className="login-overlay" onMouseDown={() => setDetails(null)}>
+        <div className="student-expanded-panel">
           {detailsLoading ? (
             <div className="student-detail-panel">Loading details…</div>
           ) : (
-            <article
-              className="student-detail-panel"
-              onMouseDown={(event) => event.stopPropagation()}
-            >
+            <article className="student-detail-panel">
               <button className="modal-close" onClick={() => setDetails(null)}>
                 <FiX />
               </button>

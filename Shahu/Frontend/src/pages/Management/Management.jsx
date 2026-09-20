@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiBookOpen, FiEdit2, FiEye, FiPlus, FiSend, FiTrash2, FiUsers, FiX } from 'react-icons/fi';
+import { FiBookOpen, FiChevronDown, FiEdit2, FiEye, FiPlus, FiSearch, FiSend, FiTrash2, FiUsers, FiX } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { apiClient } from '../../api/axios';
 import { environment } from '../../config/environment';
@@ -134,6 +134,8 @@ export function Management({ resource }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [items, setItems] = useState([]);
+  const [courseSearch, setCourseSearch] = useState('');
+  const [expandedCourseId, setExpandedCourseId] = useState(null);
   const [courses, setCourses] = useState([]);
   const [accountPayments, setAccountPayments] = useState([]);
   const [paymentFilters, setPaymentFilters] = useState({ account: '', status: '', month: '', from: '', to: '' });
@@ -147,6 +149,12 @@ export function Management({ resource }) {
   const isAccount = resource === 'payment-accounts';
   const isPurchases = resource === 'course-purchases';
   const canUseGeneric = plainResources.has(resource);
+  const visibleItems = useMemo(() => {
+    if (!isCourse || !courseSearch.trim()) return items;
+    const query = courseSearch.trim().toLowerCase();
+    return items.filter((item) => [item.name, item.courseCode, item.courseId, item.description, item.courseType, item.status]
+      .some((value) => String(value || '').toLowerCase().includes(query)));
+  }, [courseSearch, isCourse, items]);
 
   const load = async () => {
     setLoading(true);
@@ -594,14 +602,15 @@ export function Management({ resource }) {
           </div>
         </section>
       )}
-      {!isAccount && <div className="card management-list">
+      {isCourse ? <label className="course-search"><FiSearch /><input value={courseSearch} onChange={(event) => setCourseSearch(event.target.value)} placeholder="Search courses, codes or descriptions" /></label> : null}
+      {!isAccount && <div className={`card management-list ${isCourse ? 'course-management-list' : ''}`}>
         {loading ? (
           <p className="muted">Loading records…</p>
-        ) : !items.length ? (
+        ) : !visibleItems.length ? (
           <p className="muted">No {titleFor(resource).toLowerCase()} found yet.</p>
         ) : (
-          items.map((item) => (
-            <article className="resource-row" key={item._id}>
+          visibleItems.map((item) => (
+            <article className={`resource-row ${isCourse ? 'course-list-row' : ''} ${expandedCourseId === item._id ? 'is-expanded' : ''}`} key={item._id} onClick={isCourse ? () => setExpandedCourseId((current) => current === item._id ? null : item._id) : undefined}>
               {(resource === 'achievements' && item.resourceUrl) || (isCourse && item.imageUrl) ? (
                 <img
                   className="achievement-thumbnail course-thumbnail"
@@ -681,6 +690,7 @@ export function Management({ resource }) {
               <span className={`status-pill ${item.isDeleted || (isCourse && item.isPublished === false) ? 'inactive' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : String(item.status || 'active').toLowerCase()}`}>
                 {item.isDeleted ? 'Archived course' : isCourse && item.isPublished === false ? 'Draft' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'Disabled course' : item.status || 'active'}
               </span>
+              {isCourse ? <FiChevronDown className="course-row-expand" aria-hidden="true" /> : null}
               {!isPurchases && (
                 <div className="row-actions">
                   {isCourse ? (

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiBookOpen, FiDownload, FiEdit2, FiFile, FiPlus, FiTrash2, FiUpload, FiX } from 'react-icons/fi';
+import { FiBookOpen, FiChevronDown, FiDownload, FiEdit2, FiFile, FiPlus, FiSearch, FiTrash2, FiUpload, FiX } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 
 import { apiClient } from '../../api/axios';
@@ -15,6 +15,8 @@ const emptyForm = {
 export function Subjects() {
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
+  const [search, setSearch] = useState('');
+  const [expandedSubjectId, setExpandedSubjectId] = useState(null);
   const [form, setForm] = useState(null);
   const [editing, setEditing] = useState(null);
   const [mockTestSubject, setMockTestSubject] = useState(null);
@@ -143,6 +145,12 @@ export function Subjects() {
       await loadMockTestHistory(mockTest.course, mockTestSubject._id);
     } catch (error) { toast.error(error.response?.data?.message || 'Unable to import mock test'); }
   };
+  const filteredItems = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return items;
+    return items.filter((item) => [item.name, item.subjectCode, item.subjectId, item.description, item.status]
+      .some((value) => String(value || '').toLowerCase().includes(query)));
+  }, [items, search]);
 
   return (
     <section className="page-enter">
@@ -157,10 +165,17 @@ export function Subjects() {
         </button>
       </div>
 
-      <div className="subject-master-grid">
-        {items.map((item) => (
-          <article className="card" key={item._id}>
-            <div>
+      <label className="subject-search">
+        <FiSearch />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search subjects, codes or descriptions" />
+      </label>
+
+      <div className="subject-list-scroll">
+        <div className="subject-list">
+        {filteredItems.map((item) => {
+          const expanded = expandedSubjectId === item._id;
+          return <article className={`subject-list-item ${expanded ? 'is-expanded' : ''}`} key={item._id}>
+            <button className="subject-list-row" type="button" onClick={() => setExpandedSubjectId(expanded ? null : item._id)}>
               <span className="subject-code">
                 <i
                   aria-hidden="true"
@@ -169,12 +184,14 @@ export function Subjects() {
                 />
                 <b>{item.subjectCode || item.subjectId || 'Code pending'}</b>
               </span>
+              <strong>{item.name || 'Unnamed subject'}</strong>
               <span className={`status-pill ${item.status}`}>{item.status}</span>
-            </div>
-            <h3>{item.name || 'Unnamed subject'}</h3>
-            <p>{item.description || 'No description added'}</p>
-            <small>Created {new Date(item.createdAt).toLocaleDateString('en-IN')}</small>
-            <div className="subject-card-actions">
+              <small>Created {new Date(item.createdAt).toLocaleDateString('en-IN')}</small>
+              <FiChevronDown className="subject-row-expand" aria-hidden="true" />
+            </button>
+            {expanded ? <div className="subject-list-details">
+              <p>{item.description || 'No description added'}</p>
+              <div className="subject-card-actions">
               <button className="text-button" onClick={() => openMaterialWorkspace(item)}>
                 <FiBookOpen /> Syllabus
               </button>
@@ -190,17 +207,20 @@ export function Subjects() {
               >
                 <FiTrash2 /> Delete
               </button>
-            </div>
-            <div className="subject-material-actions">
+              </div>
+              <div className="subject-material-actions">
               <span><FiFile /> Add material</span>
               <button className="text-button" onClick={() => openMaterialWorkspace(item, 'notes')}>Notes</button>
               <button className="text-button" onClick={() => openMaterialWorkspace(item, 'generated-questions')}>Questions</button>
               <button className="text-button" onClick={() => openMaterialWorkspace(item, 'question-paper')}>Old papers</button>
               <button className="text-button" onClick={() => openMaterialWorkspace(item, 'other')}>Other</button>
-            </div>
-          </article>
-        ))}
+              </div>
+            </div> : null}
+          </article>;
+        })}
+        </div>
       </div>
+      {filteredItems.length === 0 ? <p className="muted">No subjects match your search.</p> : null}
 
       {form ? (
         <div className="login-overlay">

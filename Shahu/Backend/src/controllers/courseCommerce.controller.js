@@ -838,9 +838,9 @@ const emailTemporaryPassword = asyncHandler(async (req, res) => {
   }
   const delivery = await sendEmail({
     to: student.email,
-    subject: 'Your Shahu Academy temporary password',
-    text: `Dear ${student.name || 'Student'},\n\nAn administrator generated a temporary password for your Shahu Academy account.\n\nLogin email: ${student.email}\nTemporary password: ${temporaryPassword}\n\nPlease sign in and change this password immediately.`,
-    html: `<p>Dear ${student.name || 'Student'},</p><p>An administrator generated a temporary password for your Shahu Academy account.</p><p><strong>Login email:</strong> ${student.email}<br/><strong>Temporary password:</strong> ${temporaryPassword}</p><p>Please sign in and change this password immediately.</p>`,
+    subject: 'Your GS BY Anand Sir temporary password',
+    text: `Dear ${student.name || 'Student'},\n\nAn administrator generated a temporary password for your GS BY Anand Siraccount.\n\nLogin email: ${student.email}\nTemporary password: ${temporaryPassword}\n\nPlease sign in and change this password immediately.`,
+    html: `<p>Dear ${student.name || 'Student'},</p><p>An administrator generated a temporary password for your GS BY Anand Siraccount.</p><p><strong>Login email:</strong> ${student.email}<br/><strong>Temporary password:</strong> ${temporaryPassword}</p><p>Please sign in and change this password immediately.</p>`,
   });
   if (delivery?.skipped) throw new AppError(delivery.reason || 'Email delivery is not configured', STATUS_CODES.SERVICE_UNAVAILABLE);
   await AuditLog.create({

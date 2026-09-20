@@ -61,7 +61,9 @@ module.exports = {
   email: {
     brevoApiKey: process.env.BREVO_API_KEY,
     from: process.env.EMAIL_FROM,
-    fromName: process.env.EMAIL_FROM_NAME || 'Shahu Academy',
+    fromName: process.env.EMAIL_FROM_NAME || 'Cognitix',
+    replyTo: process.env.EMAIL_REPLY_TO || process.env.EMAIL_FROM,
+    replyToName: process.env.EMAIL_REPLY_TO_NAME || 'Cognitix',
   },
   otp: { hmacSecret: process.env.OTP_HMAC_SECRET || process.env.JWT_ACCESS_SECRET || 'development-only-otp-secret' },
   superadminRecoveryEmail: process.env.SUPERADMIN_RECOVERY_EMAIL || 'hrinfocognitix@gmail.com',

@@ -37,6 +37,7 @@ async function sendEmail({ to, subject, html, text, attachments }) {
       },
       body: JSON.stringify({
         sender: { email: env.email.from, name: env.email.fromName },
+        replyTo: { email: env.email.replyTo, name: env.email.replyToName },
         to: [{ email: to }],
         subject,
         htmlContent: html,

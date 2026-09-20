@@ -52,7 +52,7 @@ app.use(compression());
 // Render and other hosting providers probe the service root during deployment.
 app.get('/', (req, res) => res.status(200).json({
   success: true,
-  message: 'Shahu Academy API is running',
+  message: 'GS BY Anand Sir API is running',
 }));
 // Register logging before all API parsers/routes so every submit operation,
 // including raw payment webhooks, has one request ID and a final outcome log.
