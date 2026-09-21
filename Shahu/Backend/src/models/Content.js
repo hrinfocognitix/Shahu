@@ -21,6 +21,7 @@ const contentSchema = new mongoose.Schema(
     // Set by the scheduler once the scheduled-start push has been claimed.
     // This prevents duplicate reminders when the process restarts.
     liveNotificationSentAt: Date,
+    liveReminderSentAt: Date,
     media: [{
       _id: false,
       url: { type: String, required: true },
