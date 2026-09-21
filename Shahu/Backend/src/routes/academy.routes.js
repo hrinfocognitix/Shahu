@@ -85,10 +85,10 @@ const canReadStudentCourse = async (request, item) => {
     })
   );
 };
-const isYouTubeLink = (value) => {
+const isVideoUrl = (value) => {
   try {
-    const hostname = new URL(String(value)).hostname.toLowerCase().replace(/^www\./, '');
-    return hostname === 'youtu.be' || hostname === 'youtube.com' || hostname.endsWith('.youtube.com') || hostname === 'youtube-nocookie.com';
+    const url = new URL(String(value));
+    return url.protocol === 'https:' || url.protocol === 'http:';
   } catch {
     return false;
   }
@@ -118,10 +118,10 @@ const validateLiveLecture = (body, requireLectureDetails = false) => {
     throw new AppError('Select both the course and subject for a live lecture', STATUS_CODES.BAD_REQUEST);
   }
   if (requireLectureDetails && !String(body.resourceUrl || body.videoUrl || '').trim()) {
-    throw new AppError('A YouTube live link is required', STATUS_CODES.BAD_REQUEST);
+    throw new AppError('A video link is required', STATUS_CODES.BAD_REQUEST);
   }
-  if (requireLectureDetails && !isYouTubeLink(body.resourceUrl || body.videoUrl)) {
-    throw new AppError('Enter a valid YouTube live link', STATUS_CODES.BAD_REQUEST);
+  if (requireLectureDetails && !isVideoUrl(body.resourceUrl || body.videoUrl)) {
+    throw new AppError('Enter a valid YouTube, Google Drive, or direct video link', STATUS_CODES.BAD_REQUEST);
   }
   return scheduledAt;
 };
