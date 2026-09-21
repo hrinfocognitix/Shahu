@@ -108,6 +108,18 @@ const splitLines = (value) =>
     .map((item) => item.trim())
     .filter(Boolean);
 const joinLines = (value) => (value || []).join('\n');
+// All academy schedules use India Standard Time, regardless of the admin
+// browser's own timezone. datetime-local has no timezone, so format it from
+// IST explicitly and submit it with the +05:30 offset below.
+const toIndiaDateTimeInput = (value = new Date()) => {
+  const date = new Date(value);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date);
+  const part = (type) => parts.find((item) => item.type === type)?.value || '';
+  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
+};
 const titleFor = (resource) =>
   labels[resource] ||
   resource.replace(/-/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
@@ -296,7 +308,7 @@ export function Management({ resource }) {
         description: item.description || '',
         course: item.course?._id || item.course || '',
         subject: item.subject?._id || item.subject || '',
-        scheduledAt: item.scheduledAt ? new Date(item.scheduledAt).toISOString().slice(0, 16) : '',
+        scheduledAt: item.scheduledAt ? toIndiaDateTimeInput(item.scheduledAt) : '',
         status: item.status || 'active',
         resourceUrl: item.resourceUrl || '',
         media: item.media || [],
@@ -467,7 +479,15 @@ export function Management({ resource }) {
             media,
           };
         } else {
-          payload = { ...form, resourceUrl };
+          payload = {
+            ...form,
+            resourceUrl,
+            // The selected wall-clock time is always IST. The explicit offset
+            // makes it an unambiguous instant for the server and mobile app.
+            scheduledAt: resource === 'videos' && form.scheduledAt
+              ? `${form.scheduledAt}:00+05:30`
+              : form.scheduledAt,
+          };
         }
       }
       if (editing) await apiClient.patch(`/${resource}/${editing._id}`, payload);
@@ -1067,7 +1087,7 @@ function RecordFields({ form, update, courses, resource }) {
             {subjects.map((subject) => <option key={subject._id || subject.subject || subject} value={subject._id || subject.subject || subject}>{subject.name || subject.subject?.name || 'Subject'}</option>)}
           </select>
         </label>
-        <label><span>Live date and time</span><input required min={new Date().toISOString().slice(0, 16)} type="datetime-local" value={form.scheduledAt || ''} onChange={(event) => update('scheduledAt', event.target.value)} /></label>
+        <label><span>Live date and time (IST)</span><input required min={toIndiaDateTimeInput()} type="datetime-local" value={form.scheduledAt || ''} onChange={(event) => update('scheduledAt', event.target.value)} /></label>
       </> : null}
       <Field
         label={isAchievement ? 'Achievement description' : 'Description'}

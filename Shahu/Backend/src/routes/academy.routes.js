@@ -144,6 +144,7 @@ const publishScheduledLecture = async (video) => {
   const scheduleLabel = scheduledAt.toLocaleString('en-IN', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: 'Asia/Kolkata',
   });
 
   await CalendarEvent.create({
