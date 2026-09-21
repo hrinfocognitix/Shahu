@@ -114,9 +114,9 @@ async function requestStudentOtp({ email, password }) {
   );
   const delivery = await sendEmail({
     to: user.email,
-    subject: 'Your Lokaraja Career Academy login OTP',
+    subject: 'Your GS BY Anand Sir App login OTP',
     text: `Your login OTP is ${code}. It expires in 10 minutes. Do not share it with anyone.`,
-    html: `<p>Your Lokaraja Career Academy login OTP is:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It expires in 10 minutes. Do not share it with anyone.</p>`,
+    html: `<p>Your GS BY Anand Sir App login OTP is:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It expires in 10 minutes. Do not share it with anyone.</p>`,
   });
   if (delivery?.skipped) {
     await LoginOtp.deleteOne({ user: user._id });
@@ -200,9 +200,9 @@ async function requestStudentPasswordReset({ email }) {
       // Staff recovery is centrally controlled: Admin and Super Admin
       // temporary passwords go only to the academy recovery mailbox.
       to: [ROLES.ADMIN, ROLES.SUPERADMIN].includes(user.role) ? env.superadminRecoveryEmail : user.email,
-      subject: 'Your Lokaraja Career Academy temporary password',
-      text: `Your new temporary password is ${temporaryPassword}. Sign in, then change it immediately.`,
-      html: `<p>Your new temporary password is:</p><p style="font-size:20px;font-weight:700">${temporaryPassword}</p><p>Sign in, then change it immediately.</p>`,
+      subject: 'Your GS BY Anand Sir app temporary password',
+      text: `Cognitix generated your GS BY Anand Sir app temporary password: ${temporaryPassword}. Sign in to the app, then change it immediately.`,
+      html: `<p>Cognitix generated your <strong>GS BY Anand Sir app</strong> temporary password:</p><p style="font-size:20px;font-weight:700">${temporaryPassword}</p><p>Sign in to the app, then change it immediately.</p>`,
     });
     if (delivery?.skipped) throw new Error(delivery.reason || 'Email delivery is not configured');
   } catch {

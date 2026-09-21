@@ -16,6 +16,18 @@ const money = (item, locale) =>
   ).toLocaleString(locale);
 const asset = (value) =>
   value?.startsWith('http') ? value : `${environment.apiBaseUrl.replace(/\/api\/v1$/, '')}${value}`;
+const youtubeEmbedUrl = (value) => {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const id = host === 'youtu.be'
+      ? url.pathname.split('/').filter(Boolean)[0] || ''
+      : host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtube-nocookie.com'
+        ? (url.pathname === '/watch' ? url.searchParams.get('v') || '' : url.pathname.split('/').filter(Boolean).pop() || '')
+        : '';
+    return id ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0` : '';
+  } catch { return ''; }
+};
 
 export function StudentWorkspace({ mode }) {
   const { t, i18n } = useTranslation();
@@ -216,6 +228,7 @@ export function StudentWorkspace({ mode }) {
     finally { setPasswordSaving(false); }
   };
   const previewUrl = previewItem ? asset(previewItem.previewUrl || previewItem.videoUrl || previewItem.resourceUrl || `${previewItem.downloadUrl || ''}${previewItem.downloadUrl ? '&inline=1' : ''}`) : '';
+  const youtubePreviewUrl = mode === 'lectures' ? youtubeEmbedUrl(previewUrl) : '';
   const previewType = String(previewItem?.mimeType || '').toLowerCase();
 
   const pageMode = ['home', 'courses', 'syllabus', 'notes', 'papers', 'tests', 'lectures', 'profile'].includes(mode) ? mode : 'home';
@@ -409,7 +422,7 @@ export function StudentWorkspace({ mode }) {
         <section aria-label="Learning file preview" className="learning-preview-modal" onMouseDown={(event) => event.stopPropagation()}>
           <header><div><p className="eyebrow">PREVIEW</p><h2>{previewItem.title || previewItem.originalFilename || 'Learning file'}</h2></div><div className="learning-preview-tools">{previewType.startsWith('image/') || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(previewUrl) ? <><button aria-label="Zoom out" disabled={previewZoom <= 1} onClick={() => setPreviewZoom((value) => Math.max(1, value - .25))} type="button">−</button><button aria-label="Zoom in" disabled={previewZoom >= 3} onClick={() => setPreviewZoom((value) => Math.min(3, value + .25))} type="button">+</button></> : null}<button aria-label="Close preview" onClick={() => setPreviewItem(null)} type="button"><FiX /></button></div></header>
           <div className="learning-preview-content">
-            {previewType.startsWith('video/') || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(previewUrl) ? <video controls controlsList="nodownload" src={previewUrl} /> : previewType.startsWith('image/') || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(previewUrl) ? <div className="learning-preview-image"><img alt={previewItem.title || 'Learning preview'} src={previewUrl} style={{ transform: `scale(${previewZoom})` }} /></div> : <iframe src={previewUrl} title={previewItem.title || 'Learning file preview'} />}
+            {youtubePreviewUrl ? <iframe allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen src={youtubePreviewUrl} title={previewItem.title || 'Live lecture'} /> : previewType.startsWith('video/') || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(previewUrl) ? <video controls controlsList="nodownload" src={previewUrl} /> : previewType.startsWith('image/') || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(previewUrl) ? <div className="learning-preview-image"><img alt={previewItem.title || 'Learning preview'} src={previewUrl} style={{ transform: `scale(${previewZoom})` }} /></div> : <iframe src={previewUrl} title={previewItem.title || 'Learning file preview'} />}
           </div>
         </section>
       </div>}

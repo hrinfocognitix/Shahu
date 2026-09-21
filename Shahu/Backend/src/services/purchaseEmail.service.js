@@ -9,7 +9,7 @@ function createPurchaseConfirmationEmail({ student, course, transaction, enrollm
   const rawCourseName = course.name || 'Course';
   const courseName = escapeHtml(rawCourseName);
   const loginDetails = temporaryPassword
-    ? `<div style="margin-top:18px;padding:14px 16px;border-radius:10px;background:#fff5e9;border:1px solid #f2cf9a"><strong style="color:#6d4d22">Login details / लॉगिन तपशील</strong><br/>Login email / लॉगिन ईमेल: ${escapeHtml(student.email)}<br/>Temporary password / तात्पुरता पासवर्ड: <strong>${escapeHtml(temporaryPassword)}</strong><br/><span style="color:#6f665b">Please change your password after you sign in. / लॉगिन केल्यानंतर पासवर्ड बदला.</span></div>`
+    ? `<div style="margin-top:18px;padding:14px 16px;border-radius:10px;background:#fff5e9;border:1px solid #f2cf9a"><strong style="color:#6d4d22">GS BY Anand Sir app login details / लॉगिन तपशील</strong><br/>Login email / लॉगिन ईमेल: ${escapeHtml(student.email)}<br/>Temporary password / तात्पुरता पासवर्ड: <strong>${escapeHtml(temporaryPassword)}</strong><br/><span style="color:#6f665b">Please change your password after you sign in. / लॉगिन केल्यानंतर पासवर्ड बदला.</span></div>`
     : '';
   const textLoginDetails = temporaryPassword ? `\n\nLogin details / लॉगिन तपशील\nLogin email / लॉगिन ईमेल: ${student.email}\nTemporary password / तात्पुरता पासवर्ड: ${temporaryPassword}\nPlease change your password after you sign in. / लॉगिन केल्यानंतर पासवर्ड बदला.` : '';
   return {
