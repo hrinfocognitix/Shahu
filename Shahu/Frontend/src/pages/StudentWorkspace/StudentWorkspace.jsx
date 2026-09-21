@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { FiBookOpen, FiCreditCard, FiEye, FiUser, FiX } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
+import { Link, useSearchParams } from 'react-router-dom';
 import { apiClient } from '../../api/axios';
 import { environment } from '../../config/environment';
+import { ROUTES } from '../../config/routes';
 
 // Use the same published learning-file categories as the Android app.
 const categories = { syllabus: 'syllabus-copy', notes: 'notes', papers: 'question-paper' };
@@ -17,6 +19,7 @@ const asset = (value) =>
 
 export function StudentWorkspace({ mode }) {
   const { t, i18n } = useTranslation();
+  const [searchParams] = useSearchParams();
   const locale = i18n.language === 'mr' ? 'mr-IN' : 'en-IN';
   const [account, setAccount] = useState(null);
   const [courseId, setCourseId] = useState('');
@@ -80,6 +83,17 @@ export function StudentWorkspace({ mode }) {
     });
   }, [account]);
   useEffect(() => {
+    const requestedCourseId = searchParams.get('course');
+    if (
+      mode === 'lectures' &&
+      requestedCourseId &&
+      courses.some((item) => String(item._id) === requestedCourseId)
+    ) {
+      setCourseId(requestedCourseId);
+      setSubjectId('');
+    }
+  }, [courses, mode, searchParams]);
+  useEffect(() => {
     if (mode !== 'home') return;
     apiClient.get('/notifications', { params: { limit: 10 } })
       .then((response) => setNotifications(response.data.data || []))
@@ -90,7 +104,9 @@ export function StudentWorkspace({ mode }) {
     setItems([]);
     setAnswers({});
     setResult(null);
-    if (!courseId || !subjectId || ['home', 'courses', 'profile', 'tests'].includes(mode)) return;
+    // Lectures are useful at the course level.  A subject is an optional filter,
+    // while the other learning areas remain subject-specific.
+    if (!courseId || (!subjectId && mode !== 'lectures') || ['home', 'courses', 'profile', 'tests'].includes(mode)) return;
     const endpoint =
       mode === 'tests'
           ? '/learning/questions'
@@ -99,8 +115,8 @@ export function StudentWorkspace({ mode }) {
             : '/learning/files';
     const params = {
       course: courseId,
-      subject: subjectId,
       ...(categories[mode] && mode !== 'lectures' ? { category: categories[mode] } : {}),
+      ...(subjectId ? { subject: subjectId } : {}),
     };
     apiClient
       .get(endpoint, { params })
@@ -254,6 +270,11 @@ export function StudentWorkspace({ mode }) {
               <p>
                 {t('student.valid', { from: date(item.validFrom, locale), until: date(item.validUntil, locale), days: item.validityDays })}
               </p>
+              {item.status === 'active' && item.course?._id ? (
+                <Link className="student-preview-button" to={`${ROUTES.studentLectures}?course=${item.course._id}`}>
+                  <FiEye /> Video Lectures
+                </Link>
+              ) : null}
             </article>
           ))}
         </div>
@@ -378,6 +399,9 @@ export function StudentWorkspace({ mode }) {
               </article>
             ))}
           </div>
+          {mode === 'lectures' && courseId && !items.length ? (
+            <div className="card student-empty">No video lectures are currently available for this course.</div>
+          ) : null}
           </>}
         </>
       )}

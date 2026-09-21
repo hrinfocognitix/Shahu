@@ -569,9 +569,22 @@ module.exports = [
         defaultFilter: { type: 'video' },
         beforeList: async (req) => {
           const courseFilter = await studentCourseFilter(req);
-          return req.user.role === ROLES.STUDENT
-            ? { ...courseFilter, $or: [{ scheduledAt: null }, { scheduledAt: { $lte: new Date() } }] }
-            : courseFilter;
+          return courseFilter;
+        },
+        afterList: async (videos, req) => {
+          if (req.user.role !== ROLES.STUDENT) return videos;
+          const now = new Date();
+          // Students may see the class title and its countdown before it
+          // starts, but the actual stream URL remains unavailable until then.
+          return videos.map((video) => {
+            const item = video.toObject ? video.toObject() : { ...video };
+            if (item.scheduledAt && new Date(item.scheduledAt) > now) {
+              delete item.resourceUrl;
+              delete item.videoUrl;
+              delete item.externalUrl;
+            }
+            return item;
+          });
         },
         canRead: async (req, video) => {
           if (!(await canReadStudentCourse(req, video))) return false;

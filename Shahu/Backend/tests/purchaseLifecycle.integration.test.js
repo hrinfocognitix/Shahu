@@ -23,6 +23,7 @@ const Question = require('../src/models/Question');
 const QuestionImport = require('../src/models/QuestionImport');
 const QuestionImportRow = require('../src/models/QuestionImportRow');
 const { signAccessToken } = require('../src/helpers/jwt.helper');
+const { comparePassword } = require('../src/helpers/bcrypt.helper');
 const { ROLES } = require('../src/constants/roles');
 
 jest.setTimeout(60000);
@@ -168,6 +169,37 @@ describe('course purchase lifecycle (isolated Mongo replica set)', () => {
     expect(validity.body.data.validityMode).toBe('manual');
     expect(validity.body.data.validityHistory).toHaveLength(1);
     expect(await AuditLog.countDocuments({ action: 'validity_overridden', recordId: enrollment._id })).toBe(1);
+  });
+
+  it('replaces the password when a student with only expired access buys another course', async () => {
+    const student = await User.findOne({ email: 'txn10001@example.test' });
+    await Enrollment.updateMany(
+      { student: student._id },
+      { $set: { status: 'expired', validUntil: new Date('2020-01-01T00:00:00.000Z') } }
+    );
+    const replacementCourse = await Course.create({
+      name: 'Replacement Course', actualPrice: 1500, durationDays: 30, status: 'active',
+    });
+    const created = await request(app).post('/api/v1/course-purchases')
+      .set('X-Client-Platform', 'android')
+      .send({
+        ...purchasePayload('TXN10003'),
+        courseId: String(replacementCourse._id),
+        email: 'txn10001@example.test',
+        mobileNo: '9000010001',
+      });
+    const verified = await request(app)
+      .patch(`/api/v1/course-purchases/transactions/${created.body.data._id}/verify`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'successful', reason: 'Replacement course payment checked' });
+
+    expect(verified.status).toBe(200);
+    expect(verified.body.data.temporaryPassword).toBeTruthy();
+    const refreshedStudent = await User.findById(student._id).select('+password +authVersion');
+    expect(refreshedStudent.mustChangePassword).toBe(true);
+    expect(refreshedStudent.authVersion).toBe(2);
+    expect(await comparePassword('Student-Password-2026', refreshedStudent.password)).toBe(false);
+    expect(await comparePassword(verified.body.data.temporaryPassword, refreshedStudent.password)).toBe(true);
   });
 
   it('records a failed verification without creating a student or enrollment', async () => {

@@ -49,7 +49,7 @@ const studentLinks = [
   ['Notes', ROUTES.studentNotes, FiFileText],
   ['Paper', ROUTES.studentPapers, FiFileText],
   ['Test', ROUTES.studentTests, FiMonitor],
-  ['Lectures', ROUTES.studentLectures, FiVideo],
+  ['Video Lectures', ROUTES.studentLectures, FiVideo],
   ['Profile & Payments', ROUTES.studentProfile, FiUser],
 ];
 

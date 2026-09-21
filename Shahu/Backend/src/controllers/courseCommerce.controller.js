@@ -39,6 +39,28 @@ const duplicateAccountError = () => new AppError(
 
 const hashCourseOtp = (courseId, code) => crypto.createHash('sha256').update(`course-purchase:${courseId}:${code}`).digest('hex');
 
+// A returning student only receives new credentials when they have no course
+// access left. This avoids invalidating a password while they still hold an
+// active enrollment in another course.
+const hasActiveEnrollment = (studentId, now, session) =>
+  Enrollment.exists({
+    student: studentId,
+    status: 'active',
+    validFrom: { $lte: now },
+    validUntil: { $gte: now },
+  }).session(session);
+
+const issueReplacementPassword = async (student, updatedBy) => {
+  const temporaryPassword = crypto.randomBytes(9).toString('base64url');
+  student.password = await hashPassword(temporaryPassword);
+  student.mustChangePassword = true;
+  student.authVersion = Number(student.authVersion || 0) + 1;
+  student.refreshTokens = [];
+  student.updatedBy = updatedBy;
+  await student.save();
+  return temporaryPassword;
+};
+
 const requestCourseOtp = asyncHandler(async (req, res) => {
   const { courseId, name, mobileNo, email, age, education, address } = req.body;
   if (![courseId, name, mobileNo, email, age, education, address].every(value => String(value || '').trim())) throw new AppError('All enrollment fields are required', STATUS_CODES.BAD_REQUEST);
@@ -313,7 +335,7 @@ const manuallyEnrollStudent = asyncHandler(async (req, res) => {
       { 'profile.mobile': { $in: mobileVariants } },
       { 'profile.phone': { $in: mobileVariants } },
     ],
-  }).select('+password');
+  }).select('+password +authVersion +refreshTokens');
   const matchingStudent = candidates.length === 1 ? candidates[0] : null;
   const matchingMobile = matchingStudent && [matchingStudent.profile?.mobile, matchingStudent.profile?.phone]
     .some((value) => normalizeMobile(value) === normalizedMobile);
@@ -358,6 +380,10 @@ const manuallyEnrollStudent = asyncHandler(async (req, res) => {
           },
         }], { session });
         createdStudent = true;
+      } else if (!(await hasActiveEnrollment(student._id, purchaseDate, session))) {
+        // The prior course access ended, so the new purchase gets new login
+        // credentials and every old session is invalidated.
+        temporaryPassword = await issueReplacementPassword(student, req.user._id);
       }
 
       // Recheck inside the transaction to protect simultaneous superadmin requests.
@@ -423,7 +449,9 @@ const manuallyEnrollStudent = asyncHandler(async (req, res) => {
 
   return apiResponse.success(res, {
     statusCode: STATUS_CODES.CREATED,
-    message: createdStudent ? 'Student added and course enrolled. The temporary password and receipt were emailed.' : 'Course enrolled for the existing student. The receipt was emailed.',
+    message: temporaryPassword
+      ? 'Course enrolled. A new temporary password and receipt were emailed.'
+      : 'Course enrolled for the existing student. The receipt was emailed.',
     data: { student: { _id: student._id, name: student.name, email: student.email }, enrollment, transaction, courseFee: pricing.paidAmount, ...(temporaryPassword ? { temporaryPassword } : {}) },
   });
 });
@@ -597,7 +625,9 @@ const verifyPurchase = asyncHandler(async (req, res) => {
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
-      student = await User.findOne({ email: transaction.buyer.email }).session(session);
+      student = await User.findOne({ email: transaction.buyer.email })
+        .select('+password +authVersion +refreshTokens')
+        .session(session);
       if (!student) {
         temporaryPassword = crypto.randomBytes(9).toString('base64url');
         [student] = await User.create(
@@ -624,6 +654,10 @@ const verifyPurchase = asyncHandler(async (req, res) => {
           ],
           { session }
         );
+      } else if (!(await hasActiveEnrollment(student._id, purchaseDate, session))) {
+        // Do not let credentials from an expired enrollment unlock the newly
+        // purchased course; email the generated replacement password below.
+        temporaryPassword = await issueReplacementPassword(student, req.user._id);
       }
       enrollment = await Enrollment.findOneAndUpdate(
         { transaction: transaction._id },
