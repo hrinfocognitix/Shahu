@@ -85,6 +85,14 @@ const canReadStudentCourse = async (request, item) => {
     })
   );
 };
+const isYouTubeLink = (value) => {
+  try {
+    const hostname = new URL(String(value)).hostname.toLowerCase().replace(/^www\./, '');
+    return hostname === 'youtu.be' || hostname === 'youtube.com' || hostname.endsWith('.youtube.com') || hostname === 'youtube-nocookie.com';
+  } catch {
+    return false;
+  }
+};
 const addCourseEnrollmentCounts = async (courses) => {
   const courseIds = courses.map((course) => course._id).filter(Boolean);
   if (!courseIds.length) return courses;
@@ -101,10 +109,19 @@ const addCourseEnrollmentCounts = async (courses) => {
     return { ...value, ...(byCourse.get(String(course._id)) || { purchasedStudentCount: 0, activeEnrollmentCount: 0 }) };
   });
 };
-const validateLiveLecture = (body) => {
+const validateLiveLecture = (body, requireLectureDetails = false) => {
   const scheduledAt = new Date(body.scheduledAt);
   if (!body.scheduledAt || Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date()) {
     throw new AppError('Live lecture date and time must be in the future', STATUS_CODES.BAD_REQUEST);
+  }
+  if (requireLectureDetails && (!body.course || !body.subject)) {
+    throw new AppError('Select both the course and subject for a live lecture', STATUS_CODES.BAD_REQUEST);
+  }
+  if (requireLectureDetails && !String(body.resourceUrl || body.videoUrl || '').trim()) {
+    throw new AppError('A YouTube live link is required', STATUS_CODES.BAD_REQUEST);
+  }
+  if (requireLectureDetails && !isYouTubeLink(body.resourceUrl || body.videoUrl)) {
+    throw new AppError('Enter a valid YouTube live link', STATUS_CODES.BAD_REQUEST);
   }
   return scheduledAt;
 };
@@ -118,6 +135,16 @@ const publishScheduledLecture = async (video) => {
     validFrom: { $lte: now },
     validUntil: { $gte: now },
   }).distinct('student');
+  const [subject, course] = await Promise.all([
+    video.subject ? Subject.findById(video.subject).select('name').lean() : null,
+    Course.findById(video.course).select('name').lean(),
+  ]);
+  const subjectName = subject?.name || 'Course lecture';
+  const courseName = course?.name || 'Your course';
+  const scheduleLabel = scheduledAt.toLocaleString('en-IN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 
   await CalendarEvent.create({
     title: `Live lecture: ${video.title}`,
@@ -130,12 +157,15 @@ const publishScheduledLecture = async (video) => {
 
   await sendNotificationPush({
     title: 'Live lecture scheduled',
-    body: `${video.title} is scheduled for ${scheduledAt.toLocaleString('en-IN')}.`,
+    body: `${courseName} · ${subjectName} · ${video.title} · ${scheduleLabel}`,
     students: studentIds,
     data: {
       type: 'scheduled_lecture',
       videoId: video._id,
       courseId: video.course,
+      courseName,
+      subjectId: video.subject || '',
+      subjectName,
       scheduledAt: scheduledAt.toISOString(),
     },
   });
@@ -592,7 +622,7 @@ module.exports = [
           return req.user.role !== ROLES.STUDENT || !video.scheduledAt || new Date(video.scheduledAt) <= new Date();
         },
         beforeCreate: async (req) => {
-          validateLiveLecture(req.body);
+          validateLiveLecture(req.body, true);
           return { ...(await teacherCanPublish(req)), type: 'video' };
         },
         afterCreate: publishScheduledLecture,
