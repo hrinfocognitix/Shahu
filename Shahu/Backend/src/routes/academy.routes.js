@@ -128,25 +128,6 @@ const validateLiveLecture = (body, requireLectureDetails = false) => {
 const publishScheduledLecture = async (video) => {
   const scheduledAt = new Date(video.scheduledAt);
   if (!video.course || Number.isNaN(scheduledAt.getTime())) return;
-  const now = new Date();
-  const studentIds = await Enrollment.find({
-    course: video.course,
-    status: 'active',
-    validFrom: { $lte: now },
-    validUntil: { $gte: now },
-  }).distinct('student');
-  const [subject, course] = await Promise.all([
-    video.subject ? Subject.findById(video.subject).select('name').lean() : null,
-    Course.findById(video.course).select('name').lean(),
-  ]);
-  const subjectName = subject?.name || 'Course lecture';
-  const courseName = course?.name || 'Your course';
-  const scheduleLabel = scheduledAt.toLocaleString('en-IN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'Asia/Kolkata',
-  });
-
   await CalendarEvent.create({
     title: `Live lecture: ${video.title}`,
     type: 'live-class',
@@ -156,20 +137,8 @@ const publishScheduledLecture = async (video) => {
     createdBy: video.uploadedBy,
   });
 
-  await sendNotificationPush({
-    title: 'Live lecture scheduled',
-    body: `${courseName} · ${subjectName} · ${video.title} · ${scheduleLabel}`,
-    students: studentIds,
-    data: {
-      type: 'scheduled_lecture',
-      videoId: video._id,
-      courseId: video.course,
-      courseName,
-      subjectId: video.subject || '',
-      subjectName,
-      scheduledAt: scheduledAt.toISOString(),
-    },
-  });
+  // Push delivery is intentionally handled by the once-per-minute scheduler
+  // at scheduledAt, so students receive an actionable “starting now” alert.
 };
 const requireReason = (value, message) => {
   const normalized = String(value || '').trim();

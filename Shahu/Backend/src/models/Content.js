@@ -18,6 +18,9 @@ const contentSchema = new mongoose.Schema(
     imageUrl: String,
     videoUrl: String,
     scheduledAt: Date,
+    // Set by the scheduler once the scheduled-start push has been claimed.
+    // This prevents duplicate reminders when the process restarts.
+    liveNotificationSentAt: Date,
     media: [{
       _id: false,
       url: { type: String, required: true },
