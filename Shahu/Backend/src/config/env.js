@@ -62,9 +62,9 @@ module.exports = {
     brevoApiKey: process.env.BREVO_API_KEY,
     from: process.env.EMAIL_FROM,
     // Academy-facing messages must never show the old technical brand.
-    fromName: 'Lokaraja Career Academy',
+    fromName: 'GS By Anand Sir',
     replyTo: process.env.EMAIL_REPLY_TO || process.env.EMAIL_FROM,
-    replyToName: 'Lokaraja Career Academy',
+    replyToName: 'GS By Anand Sir',
   },
   otp: { hmacSecret: process.env.OTP_HMAC_SECRET || process.env.JWT_ACCESS_SECRET || 'development-only-otp-secret' },
   superadminRecoveryEmail: process.env.SUPERADMIN_RECOVERY_EMAIL || 'hrinfocognitix@gmail.com',

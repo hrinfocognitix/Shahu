@@ -68,7 +68,7 @@ async function assertBuyerCanPurchaseCourse(courseId, buyer) {
   return student;
 }
 
-async function getAuthenticatedBuyer(student, courseId) {
+async function getAuthenticatedBuyer(student) {
   if (!student || student.role !== ROLES.STUDENT) {
     throw new AppError('A signed-in student account is required.', STATUS_CODES.UNAUTHORIZED);
   }
@@ -85,11 +85,6 @@ async function getAuthenticatedBuyer(student, courseId) {
   }).select('_id');
   if (duplicate) {
     throw new AppError('Your email address or mobile number is associated with another student account. Please contact the academy to correct the account mapping.', STATUS_CODES.CONFLICT);
-  }
-  const alreadyPurchased = await Enrollment.exists({ student: student._id, course: courseId });
-  if (alreadyPurchased) {
-    const course = await Course.findById(courseId).select('name');
-    throw new AppError(`You have already purchased "${course?.name || 'this course'}". Please open My Courses to access it.`, STATUS_CODES.CONFLICT);
   }
   return {
     name: String(student.name || email).trim(), email, mobileNo,
@@ -186,11 +181,12 @@ async function createUpiPaymentIntent(body, authenticatedStudent = null) {
     throw new AppError('Merchant gateway checkout is not configured for this account yet.', STATUS_CODES.CONFLICT);
   }
   const amount = Number(course.fees || 0);
+  const isRenewal = Boolean(authenticatedStudent && await Enrollment.exists({ student: authenticatedStudent._id, course: course._id }));
   const accessToken = crypto.randomBytes(32).toString('base64url');
   const internalReference = createTransactionReference();
   const intent = await PaymentIntent.create({
     transactionReference: internalReference, internalReference, course: course._id, paymentAccount: account._id,
-    email: buyer.email, userId: authenticatedStudent?._id, buyer, provider: 'upi', paymentMode: 'direct-upi',
+    email: buyer.email, userId: authenticatedStudent?._id, buyer, isRenewal, provider: 'upi', paymentMode: 'direct-upi',
     merchantType: accountPayload.merchantType || 'personal', amount, amountMinor: Math.round(amount * 100),
     upiId, payeeName: String(accountPayload.merchantDisplayName || accountPayload.accountName || account.title || 'Course Payment').trim(),
     transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING_PAYMENT',
@@ -220,6 +216,7 @@ async function createRazorpayQrPayment(body, authenticatedStudent = null) {
   if (!course) throw new AppError('Course not found.', STATUS_CODES.NOT_FOUND);
   if (!authenticatedStudent) await assertBuyerCanPurchaseCourse(course._id, buyer);
   const amount = Number(course.fees || 0); const amountMinor = Math.round(amount * 100);
+  const isRenewal = Boolean(authenticatedStudent && await Enrollment.exists({ student: authenticatedStudent._id, course: course._id }));
   if (amountMinor < 100) throw new AppError('Course price must be at least ₹1.00 for Razorpay.', STATUS_CODES.BAD_REQUEST);
   const internalReference = createTransactionReference();
   // Razorpay requires close_by to be at least 15 minutes. The academy's own
@@ -234,7 +231,7 @@ async function createRazorpayQrPayment(body, authenticatedStudent = null) {
     const accessToken = crypto.randomBytes(32).toString('base64url');
     const intent = await PaymentIntent.create({
       transactionReference: internalReference, internalReference, course: course._id,
-      email: buyer.email, userId: authenticatedStudent?._id, buyer, provider: 'razorpay', paymentMode: 'merchant-gateway', merchantType: 'business', amount, amountMinor,
+      email: buyer.email, userId: authenticatedStudent?._id, buyer, isRenewal, provider: 'razorpay', paymentMode: 'merchant-gateway', merchantType: 'business', amount, amountMinor,
       upiId: 'razorpay-qr@razorpay', payeeName: 'Razorpay', transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING',
       razorpay: { qrId: qr.id, qrImageUrl: qr.image_url, qrContent: qr.image_content, expiresAt },
     });
@@ -271,6 +268,7 @@ async function expireRazorpayQrPayments() {
     if (!course) throw new AppError('Course not found.', STATUS_CODES.NOT_FOUND);
     if (!authenticatedStudent) await assertBuyerCanPurchaseCourse(course._id, buyer);
     const amount = Number(course.fees || 0); const amountMinor = Math.round(amount * 100);
+    const isRenewal = Boolean(authenticatedStudent && await Enrollment.exists({ student: authenticatedStudent._id, course: course._id }));
     if (amountMinor < 100) throw new AppError('Course price must be at least ₹1.00.', STATUS_CODES.BAD_REQUEST);
     const internalReference = createTransactionReference();
     let order;
@@ -293,7 +291,7 @@ async function expireRazorpayQrPayments() {
     if (order?.skipped || !order?.id) throw new AppError('Razorpay is not configured.', STATUS_CODES.SERVICE_UNAVAILABLE);
     const accessToken = crypto.randomBytes(32).toString('base64url');
     const intent = await PaymentIntent.create({
-      transactionReference: internalReference, internalReference, course: course._id, email: buyer.email, userId: authenticatedStudent?._id, buyer,
+      transactionReference: internalReference, internalReference, course: course._id, email: buyer.email, userId: authenticatedStudent?._id, buyer, isRenewal,
       provider: 'razorpay', paymentMode: 'merchant-gateway', merchantType: 'business', amount, amountMinor, upiId: 'razorpay-checkout@razorpay',
       payeeName: 'Razorpay', transactionNote: 'Course Payment', accessTokenHash: hashAccessToken(accessToken), status: 'PENDING', razorpay: { account: 'standard-checkout', orderId: order.id },
     });
@@ -487,7 +485,13 @@ async function approvePayment(paymentId, admin, ip, options = {}) {
           profile: { phone: locked.buyer?.mobileNo, mobile: locked.buyer?.mobileNo, address: locked.buyer?.address, age: locked.buyer?.age, educationQualification: locked.buyer?.education, admissionDate: new Date(), paymentStatus: 'successful', studentStatus: 'active' }, createdBy: admin._id, updatedBy: admin._id }], { session });
       }
       enrolledCourse = await Course.findById(locked.course).session(session);
-      const now = new Date(); const validityDays = Math.max(1, Number(enrolledCourse.durationDays || 1)); const validUntil = new Date(now); validUntil.setUTCDate(validUntil.getUTCDate() + validityDays);
+      const now = new Date(); const validityDays = Math.max(1, Number(enrolledCourse.durationDays || 1));
+      const existingEnrollment = await Enrollment.findOne({ student: student._id, course: enrolledCourse._id }).session(session);
+      const validFrom = existingEnrollment?.validUntil && existingEnrollment.validUntil > now
+        ? existingEnrollment.validUntil
+        : now;
+      const validUntil = new Date(validFrom);
+      validUntil.setUTCDate(validUntil.getUTCDate() + validityDays);
       [transaction] = await Transaction.create([{ purchaseId: `MAN-${locked.transactionReference}`, transactionReference: locked.transactionReference,
         idempotencyKey: `manual-intent:${locked._id}`, course: enrolledCourse._id, paymentAccount: locked.paymentAccount,
         student: student._id,
@@ -496,8 +500,12 @@ async function approvePayment(paymentId, admin, ip, options = {}) {
         paymentMethod: locked.provider === 'razorpay' ? 'Razorpay' : `UPI - ${locked.paymentApp || 'Manual verification'}`,
         gatewayReference: locked.provider === 'razorpay' ? locked.razorpay?.paymentId : locked.utrNumber,
         submittedFrom: 'android', status: 'successful', paymentDate: locked.razorpay?.paidAt || locked.submittedAt || new Date(), verifiedAt: new Date(), verifiedBy: admin._id, note: locked.userNote }], { session });
-      enrollment = await Enrollment.findOneAndUpdate({ student: student._id, course: enrolledCourse._id, status: 'active' },
-        { $setOnInsert: { student: student._id, course: enrolledCourse._id, transaction: transaction._id, purchaseDate: now, validFrom: now, validUntil, validityDays, status: 'active', validityMode: 'automatic', createdBy: admin._id }, $set: { updatedBy: admin._id } },
+      enrollment = await Enrollment.findOneAndUpdate({ student: student._id, course: enrolledCourse._id },
+        {
+          $setOnInsert: { student: student._id, course: enrolledCourse._id, purchaseDate: now, createdBy: admin._id },
+          $set: { transaction: transaction._id, validFrom, validUntil, validityDays, status: 'active', validityMode: 'automatic', updatedBy: admin._id },
+          ...(existingEnrollment ? { $push: { validityHistory: { previousFrom: existingEnrollment.validFrom, previousUntil: existingEnrollment.validUntil, updatedFrom: validFrom, updatedUntil: validUntil, reason: 'Course renewed after payment', updatedBy: admin._id, updatedAt: now } } } : {}),
+        },
         { upsert: true, returnDocument: 'after', runValidators: true, session });
       await PaymentIntent.findByIdAndUpdate(locked._id, { $set: { enrollment: enrollment._id, transaction: transaction._id, userId: student._id } }, { session });
       await User.findByIdAndUpdate(student._id, { $addToSet: { 'profile.purchasedCourses': enrolledCourse._id }, $set: { 'profile.paymentStatus': 'successful', updatedBy: admin._id } }, { session });

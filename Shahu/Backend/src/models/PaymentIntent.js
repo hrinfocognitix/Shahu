@@ -12,6 +12,8 @@ const paymentIntentSchema = new mongoose.Schema(
     paymentAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademyRecord' },
     email: { type: String, required: true, lowercase: true, trim: true, index: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+    // True when this payment extends an existing enrollment for the same course.
+    isRenewal: { type: Boolean, default: false },
     buyer: {
       name: { type: String, trim: true },
       mobileNo: { type: String, trim: true },
