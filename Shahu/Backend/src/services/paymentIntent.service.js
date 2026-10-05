@@ -30,6 +30,12 @@ const hashAccessToken = value => crypto.createHash('sha256').update(String(value
 const normalizeUtr = value => String(value || '').replace(/\s+/g, '').toUpperCase();
 
 const normalizedMobile = value => String(value || '').replace(/\D/g, '').slice(-10);
+const hasCurrentEnrollment = (enrollment, now = new Date()) => Boolean(
+  enrollment
+  && enrollment.status === 'active'
+  && enrollment.validFrom <= now
+  && enrollment.validUntil >= now,
+);
 
 async function findBuyerStudent(buyer) {
   const mobile = normalizedMobile(buyer.mobileNo);
@@ -58,17 +64,17 @@ async function assertBuyerCanPurchaseCourse(courseId, buyer) {
       throw new AppError('This mobile device is already registered to another student account.', STATUS_CODES.CONFLICT);
     }
   }
-  const existingEnrollment = await Enrollment.exists({
+  const existingEnrollment = await Enrollment.findOne({
     student: student._id,
     course: courseId,
-  });
-  if (existingEnrollment) {
-    throw new AppError('This student already owns this course. Renew its validity instead of purchasing it again.', STATUS_CODES.CONFLICT);
+  }).select('status validFrom validUntil');
+  if (hasCurrentEnrollment(existingEnrollment)) {
+    throw new AppError('This course is already active. You can renew it after its validity expires.', STATUS_CODES.CONFLICT);
   }
   return student;
 }
 
-async function getAuthenticatedBuyer(student) {
+async function getAuthenticatedBuyer(student, courseId) {
   if (!student || student.role !== ROLES.STUDENT) {
     throw new AppError('A signed-in student account is required.', STATUS_CODES.UNAUTHORIZED);
   }
@@ -85,6 +91,11 @@ async function getAuthenticatedBuyer(student) {
   }).select('_id');
   if (duplicate) {
     throw new AppError('Your email address or mobile number is associated with another student account. Please contact the academy to correct the account mapping.', STATUS_CODES.CONFLICT);
+  }
+  const existingEnrollment = await Enrollment.findOne({ student: student._id, course: courseId })
+    .select('status validFrom validUntil');
+  if (hasCurrentEnrollment(existingEnrollment)) {
+    throw new AppError('This course is already active. You can renew it after its validity expires.', STATUS_CODES.CONFLICT);
   }
   return {
     name: String(student.name || email).trim(), email, mobileNo,

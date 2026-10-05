@@ -158,9 +158,14 @@ async function requestStudentPasswordReset({ email }) {
   if (!user || !user.isActive) {
     return { eligible: false, message: 'If the email address is valid, a temporary password will be sent.' };
   }
-  const hasPurchasedCourse = user.role !== ROLES.STUDENT || await Enrollment.exists({ student: user._id });
-  if (!hasPurchasedCourse) {
-    return { eligible: false, message: 'You are not a registered student. Please purchase a course first.' };
+  const hasCurrentCourse = user.role !== ROLES.STUDENT || await Enrollment.exists({
+    student: user._id,
+    status: 'active',
+    validFrom: { $lte: new Date() },
+    validUntil: { $gte: new Date() },
+  });
+  if (!hasCurrentCourse) {
+    return { eligible: false, message: 'Password reset is available only while you have an active course plan. Please renew your course first.' };
   }
 
   const cooldownMs = 12 * 60 * 60 * 1000;
