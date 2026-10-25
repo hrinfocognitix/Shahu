@@ -9,6 +9,7 @@ export const ROUTES = {
   reports: '/reports',
   notifications: '/notifications',
   courses: '/courses',
+  courseTypes: '/course-types',
   courseDetail: '/courses/:courseId',
   subjects: '/subjects',
   teachers: '/teachers',

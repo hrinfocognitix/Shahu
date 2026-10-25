@@ -72,7 +72,10 @@ const courseSchema = new mongoose.Schema(
     level: { type: String, enum: ['Beginner', 'Intermediate', 'Advanced', ''], default: '' },
     language: String,
     category: String,
-    courseType: { type: String, enum: ['UI', 'Professional'], default: 'Professional' },
+    // A course type is managed by admins. Keep the readable name and its
+    // immutable type code on the course so the mobile catalog needs no join.
+    courseType: { type: String, trim: true, default: '' },
+    courseTypeCode: { type: String, trim: true, uppercase: true, default: '' },
     subjects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Subject' }],
     subjectDetails: [
       {

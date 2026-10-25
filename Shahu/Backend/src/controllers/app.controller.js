@@ -114,7 +114,10 @@ const catalog = asyncHandler(async (req, res) => {
     // Legacy courses have no isPublished field and remain visible. Newly
     // created courses require the explicit Publish Course action.
     Course.find({
-      status: 'active',
+      // Published courses remain visible in the app even after admissions are
+      // closed. The commerce endpoints still require `status: active`, so an
+      // inactive course can be viewed but never purchased.
+      status: { $in: ['active', 'inactive'] },
       isDeleted: { $ne: true },
       $or: [{ isPublished: true }, { isPublished: { $exists: false } }],
     })

@@ -5,6 +5,7 @@ const createResourceRouter = require('./resource.routes');
 const asyncHandler = require('../utils/asyncHandler');
 const apiResponse = require('../utils/apiResponse');
 const Course = require('../models/Course');
+const CourseType = require('../models/CourseType');
 const Subject = require('../models/Subject');
 const Content = require('../models/Content');
 const Announcement = require('../models/Announcement');
@@ -200,11 +201,22 @@ const parseCurrencyAmount = (value, label) => {
   }
   return { amount, display: amount.toFixed(2) };
 };
-const createCoursePayload = (request) => {
+const resolveCourseType = async (code) => {
+  const courseType = await CourseType.findOne({
+    code: String(code || '').trim().toUpperCase(),
+    status: 'active',
+    isDeleted: { $ne: true },
+  });
+  if (!courseType) throw new AppError('Select a valid active course type', STATUS_CODES.BAD_REQUEST);
+  return { courseType: courseType.name, courseTypeCode: courseType.code };
+};
+const createCoursePayload = async (request) => {
   const { body } = request;
 
   requireCourseField(body.name, 'Course name is required');
   requireCourseField(body.description, 'Course description is required');
+  requireCourseField(body.courseTypeCode, 'Course type is required');
+  const courseType = await resolveCourseType(body.courseTypeCode);
 
   if (!Number.isFinite(Number(body.durationDays)) || Number(body.durationDays) < 1) {
     throw new AppError('Course validity in days is required', STATUS_CODES.BAD_REQUEST);
@@ -222,6 +234,7 @@ const createCoursePayload = (request) => {
 
   return {
     ...body,
+    ...courseType,
     // Publishing is an explicit action. Never allow a create request to make
     // a course public or to send the all-user notification.
     isPublished: false,
@@ -321,6 +334,9 @@ const updateCoursePayload = async (request) => {
     }
   }
   const payload = buildCoursePayload(request);
+  if (Object.prototype.hasOwnProperty.call(request.body, 'courseTypeCode')) {
+    Object.assign(payload, await resolveCourseType(request.body.courseTypeCode));
+  }
   let priceHistoryEntry;
 
   if (payload.actualPrice !== undefined) {
@@ -507,6 +523,10 @@ module.exports = [
         restoreRoles: [ROLES.SUPERADMIN],
       }
     ),
+  ],
+  [
+    '/course-types',
+    createResourceRouter(resourceController(CourseType), { writeRoles: courseWriteRoles }),
   ],
   [
     '/subjects',

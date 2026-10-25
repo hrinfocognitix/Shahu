@@ -56,6 +56,7 @@ export const router = createBrowserRouter([
           { path: ROUTES.students, element: <Students /> },
           { path: ROUTES.teachers, element: <Teachers /> },
           { path: ROUTES.courses, element: <Management resource="courses" /> },
+          { path: ROUTES.courseTypes, element: <Management resource="course-types" /> },
           { path: ROUTES.paymentAccounts, element: <Management resource="payment-accounts" /> },
           { path: ROUTES.coursePurchases, element: <Purchases /> },
           { path: ROUTES.auditLogs, element: <AuditLogs /> },

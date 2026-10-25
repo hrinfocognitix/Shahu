@@ -15,6 +15,7 @@ const labels = {
   'question-papers': 'Question Papers',
   materials: 'Study Materials',
   videos: 'Video Lectures',
+  'course-types': 'Course Types',
 };
 
 const plainResources = new Set([
@@ -43,7 +44,7 @@ const initialCourse = {
   fees: '',
   durationDays: '',
   actualPrice: '',
-  courseType: 'Professional',
+  courseTypeCode: '',
   hasDiscount: false,
   discountType: 'percentage',
   discountValue: '',
@@ -152,12 +153,14 @@ export function Management({ resource }) {
   const [accountPayments, setAccountPayments] = useState([]);
   const [paymentFilters, setPaymentFilters] = useState({ account: '', status: '', month: '', from: '', to: '' });
   const [activeSubjects, setActiveSubjects] = useState([]);
+  const [courseTypes, setCourseTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(initialRecord);
 
   const isCourse = resource === 'courses';
+  const isCourseType = resource === 'course-types';
   const isAccount = resource === 'payment-accounts';
   const isPurchases = resource === 'course-purchases';
   const canUseGeneric = plainResources.has(resource);
@@ -254,6 +257,12 @@ export function Management({ resource }) {
         .then((response) => setActiveSubjects(response.data.data || []))
         .catch(() => setActiveSubjects([]));
   }, [isCourse]);
+  useEffect(() => {
+    if (!isCourse) return;
+    apiClient.get('/course-types', { params: { limit: 100, status: 'active' } })
+      .then((response) => setCourseTypes(response.data.data || []))
+      .catch(() => setCourseTypes([]));
+  }, [isCourse]);
 
   const beginCreate = () => {
     setEditing(null);
@@ -280,7 +289,7 @@ export function Management({ resource }) {
         fees: item.fees ?? '',
         durationDays: item.durationDays ?? '',
         actualPrice: item.actualPriceDisplay ?? item.actualPrice ?? item.price ?? item.fees ?? '',
-        courseType: item.courseType || 'Professional',
+        courseTypeCode: item.courseTypeCode || '',
         hasDiscount: Number(item.discountValue ?? item.discountPercent ?? 0) > 0,
         discountType: item.discountType || 'percentage',
         discountValue: item.discountValue ?? item.discountPercent ?? '',
@@ -292,6 +301,13 @@ export function Management({ resource }) {
         subjects: (item.subjects || []).map((subject) => subject?._id || subject),
         detailSections: item.detailSections || [],
         subjectDetails: item.subjectDetails || [],
+      });
+    } else if (isCourseType) {
+      setForm({
+        ...initialRecord,
+        name: item.name || '',
+        code: item.code || '',
+        status: item.status || 'active',
       });
     } else if (isAccount) {
       setForm({
@@ -349,6 +365,10 @@ export function Management({ resource }) {
     try {
       let payload;
       if (isCourse) {
+        if (!String(form.courseTypeCode || '').trim()) {
+          toast.error('Select a course type');
+          return;
+        }
         if (!form.subjects?.length) {
           toast.error('Select at least one subject for this course');
           return;
@@ -395,6 +415,12 @@ export function Management({ resource }) {
         delete payload.updatedAt;
         delete payload.__v;
         delete payload._id;
+      } else if (isCourseType) {
+        if (!String(form.name || '').trim() || !String(form.code || '').trim()) {
+          toast.error('Course type name and code are required');
+          return;
+        }
+        payload = { name: form.name.trim(), code: form.code.trim(), status: form.status || 'active' };
       } else if (isAccount)
         if (!/^[a-z0-9._-]{2,256}@[a-z0-9._-]{2,64}$/i.test(String(form.upiId || '').trim())) {
           toast.error('Enter a complete UPI ID with @ handle, for example 7030901355@ibl');
@@ -569,6 +595,30 @@ export function Management({ resource }) {
     }
   };
 
+  const toggleCoursePurchasing = async (course) => {
+    const nextStatus = String(course.status || 'active').toLowerCase() === 'active'
+      ? 'inactive'
+      : 'active';
+    const action = nextStatus === 'inactive' ? 'stop purchasing' : 'resume purchasing';
+    const reason = window.prompt(`Why do you want to ${action} for “${course.name}”?`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+      toast.error('A reason is required to change course purchasing status.');
+      return;
+    }
+    try {
+      await apiClient.patch(`/courses/${course._id}`, {
+        status: nextStatus,
+        statusReason: reason.trim(),
+        updateReason: `Course ${nextStatus}: ${reason.trim()}`,
+      });
+      toast.success(nextStatus === 'inactive' ? 'Purchasing stopped. The course remains visible in the app.' : 'Purchasing resumed.');
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to change course purchasing status');
+    }
+  };
+
   const purchaseSummary = useMemo(
     () =>
       items.reduce((summary, item) => {
@@ -707,8 +757,8 @@ export function Management({ resource }) {
                   </>
                 )}
               </div>
-              <span className={`status-pill ${item.isDeleted || (isCourse && item.isPublished === false) ? 'inactive' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : String(item.status || 'active').toLowerCase()}`}>
-                {item.isDeleted ? 'Archived course' : isCourse && item.isPublished === false ? 'Draft' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'Disabled course' : item.status || 'active'}
+              <span className={`status-pill ${item.isDeleted ? 'inactive' : isCourse && item.isPublished === false ? 'draft' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'expired' : String(item.status || 'active').toLowerCase()}`}>
+                {item.isDeleted ? 'Archived course' : isCourse && item.isPublished === false ? 'Not published' : isCourse && String(item.status || 'active').toLowerCase() === 'inactive' ? 'Purchasing stopped' : item.status || 'active'}
               </span>
               {isCourse ? <FiChevronDown className="course-row-expand" aria-hidden="true" /> : null}
               {!isPurchases && (
@@ -718,6 +768,11 @@ export function Management({ resource }) {
                       {!item.isDeleted && item.isPublished === false ? (
                         <button className="text-button" onClick={() => publishCourse(item)}>
                           <FiSend /> Publish course
+                        </button>
+                      ) : null}
+                      {!item.isDeleted && item.isPublished ? (
+                        <button className="text-button" onClick={() => toggleCoursePurchasing(item)}>
+                          {String(item.status || 'active').toLowerCase() === 'active' ? 'Stop purchasing' : 'Resume purchasing'}
                         </button>
                       ) : null}
                       {!item.isDeleted ? <button className="text-button" onClick={() => navigate(`/learning?course=${item._id}`)}>
@@ -765,7 +820,10 @@ export function Management({ resource }) {
                 update={update}
                 editing={editing}
                 activeSubjects={activeSubjects}
+                courseTypes={courseTypes}
               />
+            ) : isCourseType ? (
+              <CourseTypeFields form={form} update={update} />
             ) : isAccount ? (
               <AccountFields form={form} update={update} />
             ) : canUseGeneric ? (
@@ -781,7 +839,7 @@ export function Management({ resource }) {
   );
 }
 
-function CourseFields({ form, update, editing, activeSubjects }) {
+function CourseFields({ form, update, editing, activeSubjects, courseTypes }) {
   const original = Number(form.actualPrice || 0);
   const discount = form.hasDiscount ? Number(form.discountValue || 0) : 0;
   const payable = Math.max(0, Number((form.discountType === 'fixed' ? original - discount : original - (original * discount) / 100).toFixed(2)));
@@ -792,9 +850,9 @@ function CourseFields({ form, update, editing, activeSubjects }) {
       <Field label="Course name" value={form.name} onChange={(value) => update('name', value)} />
       <label>
         <span>Course type</span>
-        <select value={form.courseType || 'Professional'} onChange={(event) => update('courseType', event.target.value)}>
-          <option value="UI">UI</option>
-          <option value="Professional">Professional</option>
+        <select required value={form.courseTypeCode || ''} onChange={(event) => update('courseTypeCode', event.target.value)}>
+          <option value="">Select course type</option>
+          {courseTypes.map((courseType) => <option key={courseType._id} value={courseType.code}>{courseType.name} ({courseType.code})</option>)}
         </select>
       </label>
       <Field
@@ -976,6 +1034,32 @@ function CourseImagePreview({ form }) {
     </div>
   );
 }
+function CourseTypeFields({ form, update }) {
+  return (
+    <div className="student-fields">
+      <Field
+        label="Course type name"
+        value={form.name || ''}
+        onChange={(value) => update('name', value)}
+        placeholder="e.g. MPSC Foundation"
+      />
+      <Field
+        label="Course type code"
+        value={form.code || ''}
+        onChange={(value) => update('code', value.toUpperCase())}
+        placeholder="e.g. MPSC-FND"
+      />
+      <label>
+        <span>Status</span>
+        <select value={form.status || 'active'} onChange={(event) => update('status', event.target.value)}>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
 function AccountFields({ form, update }) {
   return (
     <div className="student-fields">
