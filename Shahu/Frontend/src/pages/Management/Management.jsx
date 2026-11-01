@@ -18,6 +18,16 @@ const labels = {
   'course-types': 'Course Types',
 };
 
+// Fixed, study-focused icon palette. Admins select one; the Android app uses
+// the same stored emoji as the course-type logo.
+const COURSE_TYPE_LOGOS = [
+  '📚', '📖', '📝', '✏️', '📐', '📏', '🧮', '🔬', '🧪', '🧬',
+  '🔭', '🌍', '🗺️', '🏛️', '⚖️', '📜', '💡', '💻', '🖥️', '⌨️',
+  '📱', '🤖', '🎨', '🎵', '🎓', '🏫', '👩‍🏫', '👨‍🏫', '🧑‍⚕️', '⚕️',
+  '📊', '📈', '💼', '🏦', '🧾', '🛠️', '⚙️', '🏗️', '🚜', '🌱',
+  '🐾', '🧠', '🗣️', '🇮🇳', '🛡️', '🚀', '🧑‍💼', '🧑‍🔧', '🧑‍🍳', '🏆',
+];
+
 const plainResources = new Set([
   'syllabus',
   'notes',
@@ -307,6 +317,7 @@ export function Management({ resource }) {
         ...initialRecord,
         name: item.name || '',
         code: item.code || '',
+        logo: item.logo || '📚',
         status: item.status || 'active',
       });
     } else if (isAccount) {
@@ -420,7 +431,7 @@ export function Management({ resource }) {
           toast.error('Course type name and code are required');
           return;
         }
-        payload = { name: form.name.trim(), code: form.code.trim(), status: form.status || 'active' };
+        payload = { name: form.name.trim(), code: form.code.trim(), logo: form.logo || '📚', status: form.status || 'active' };
       } else if (isAccount)
         if (!/^[a-z0-9._-]{2,256}@[a-z0-9._-]{2,64}$/i.test(String(form.upiId || '').trim())) {
           toast.error('Enter a complete UPI ID with @ handle, for example 7030901355@ibl');
@@ -1043,6 +1054,12 @@ function CourseTypeFields({ form, update }) {
         onChange={(value) => update('name', value)}
         placeholder="e.g. MPSC Foundation"
       />
+      <label>
+        <span>Course logo</span>
+        <select value={form.logo || '📚'} onChange={(event) => update('logo', event.target.value)}>
+          {COURSE_TYPE_LOGOS.map((logo, index) => <option key={`${logo}-${index}`} value={logo}>{logo} Study logo {index + 1}</option>)}
+        </select>
+      </label>
       <Field
         label="Course type code"
         value={form.code || ''}

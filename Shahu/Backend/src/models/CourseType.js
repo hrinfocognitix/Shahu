@@ -4,6 +4,8 @@ const auditPlugin = require('./plugins/audit.plugin');
 const courseTypeSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, unique: true },
   code: { type: String, required: true, trim: true, uppercase: true, unique: true },
+  // Admin-selected icon from the fixed education-logo picker.
+  logo: { type: String, trim: true, default: '📚' },
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
 }, { timestamps: true });
 

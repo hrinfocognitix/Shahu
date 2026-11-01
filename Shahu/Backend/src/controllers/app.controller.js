@@ -2,6 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const apiResponse = require('../utils/apiResponse');
 const User = require('../models/User');
 const Course = require('../models/Course');
+const CourseType = require('../models/CourseType');
 const Subject = require('../models/Subject');
 const Content = require('../models/Content');
 const Exam = require('../models/Exam');
@@ -110,6 +111,7 @@ const catalog = asyncHandler(async (req, res) => {
     results,
     reports,
     deletedRecords,
+    courseTypes,
   ] = await Promise.all([
     // Legacy courses have no isPublished field and remain visible. Newly
     // created courses require the explicit Publish Course action.
@@ -165,6 +167,10 @@ const catalog = asyncHandler(async (req, res) => {
     Promise.resolve([]),
     Promise.resolve([]),
     Promise.resolve([]),
+    CourseType.find({ status: 'active', isDeleted: { $ne: true } })
+      .select('name code logo createdAt updatedAt')
+      .sort({ createdAt: -1 })
+      .limit(100),
   ]);
 
   return apiResponse.success(res, {
@@ -181,6 +187,7 @@ const catalog = asyncHandler(async (req, res) => {
       results,
       reports,
       deletedRecords,
+      courseTypes,
     },
   });
 });
