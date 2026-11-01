@@ -26,7 +26,16 @@ const COURSE_TYPE_LOGOS = [
   '📱', '🤖', '🎨', '🎵', '🎓', '🏫', '👩‍🏫', '👨‍🏫', '🧑‍⚕️', '⚕️',
   '📊', '📈', '💼', '🏦', '🧾', '🛠️', '⚙️', '🏗️', '🚜', '🌱',
   '🐾', '🧠', '🗣️', '🇮🇳', '🛡️', '🚀', '🧑‍💼', '🧑‍🔧', '🧑‍🍳', '🏆',
+  // Competitive-exam options: public service, defence, police, banking,
+  // railways, teaching and aptitude preparation.
+  '🎯', '👮', '🎖️', '🏦', '🚆', '🧑‍🏫', '🏹', '🪖', '📋', '⏱️',
 ];
+const COURSE_TYPE_LOGO_LABELS = {
+  '👮': 'Police exam',
+  '🪖': 'Army / defence exam',
+  '🧑‍🏫': 'Teacher eligibility exam',
+  '🏛️': 'Government / public service exam',
+};
 
 const plainResources = new Set([
   'syllabus',
@@ -1057,7 +1066,7 @@ function CourseTypeFields({ form, update }) {
       <label>
         <span>Course logo</span>
         <select value={form.logo || '📚'} onChange={(event) => update('logo', event.target.value)}>
-          {COURSE_TYPE_LOGOS.map((logo, index) => <option key={`${logo}-${index}`} value={logo}>{logo} Study logo {index + 1}</option>)}
+          {COURSE_TYPE_LOGOS.map((logo, index) => <option key={`${logo}-${index}`} value={logo}>{logo} {COURSE_TYPE_LOGO_LABELS[logo] || `Study logo ${index + 1}`}</option>)}
         </select>
       </label>
       <Field
